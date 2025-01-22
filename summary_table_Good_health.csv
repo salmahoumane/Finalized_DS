@@ -1,0 +1,18 @@
+"Variable","Mean","SD","Min","Max","Count"
+"BMI",25.3,4.5,12.6,197.2,43936
+"Worries About Health (Dummy)",0.5,0.5,0,1,43936
+"Smoking (Dummy)",0.3,0.5,0,1,43936
+"Health in 2 Years",3.9,0.7,1,5,43936
+"Expected Health Decline in 2 Years",0.3,0.5,0,1,43936
+"Life Satisfaction",7.8,1.3,0,10,43936
+"Health Satisfaction",8.1,1.3,0,10,43936
+"Tenure",7.8,8.3,0,40,43936
+"Net Income",1583.5,1500.6,0,99999,43936
+"Work Time Weekly",32.1,17.9,0,80,43936
+"Total Years Unemployment",0.7,1.9,0,27.6,43936
+"Job Worries (Dummy)",0.4,0.5,0,1,43936
+"Financial Worries (Dummy)",0.7,0.5,0,1,43936
+"Economic Worries (Dummy)",0.8,0.4,0,1,43936
+"Gender (Male = 1)",0.5,0.5,0,1,43936
+"Age",39.9,8.1,25,55,43936
+"Education Level",4.2,1.6,0,8,43936

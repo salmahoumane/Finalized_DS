@@ -1,0 +1,3074 @@
+---
+title: "SOEP Data Preparation"
+author: "Salma-Anastasiia-Suzanna"
+date: "2024-12-04"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+# Introduction
+We are examining the extent to which individuals’ subjective well-being can be predicted by objective factors that determine individual health decline and for which group this declaration bias is particularly large. And in that sense, which predictors (such as age, labor market status, personality traits and hand-grip strength) help improve predictions of individual health declines.
+
+This report documents the steps taken to preprocess and analyze the SOEP data for health-related outcomes: subjective and objective health measures, predictors, and control variables. The transformations include cleaning, imputing missing values, and deriving new variables.
+
+------------------------------------------------------------------------
+
+# 1. Setup
+
+## 1.1 Load Required Packages
+
+```{r}
+# Load required packages
+my_packages <- c("tidyverse", "haven", "openxlsx", "labelled", "dplyr", "lubridate","ggplot2","skimr","ggcorrplot","patchwork","ggridges", "glmnet", "plm", "magrittr", "caret","waffle","randomForest","rpart","ranger","vip","pdp","rpart.plot")
+
+for (p in my_packages) {
+  if (!require(p, character.only = TRUE)) {
+    install.packages(p, dependencies = TRUE)
+  }
+  library(p, character.only = TRUE)
+}
+```
+
+## 1.2 Load the pl Dataset
+
+```{r}
+main <- read_dta('/Users/salmahoumane/Documents/R/pl.dta') %>%
+  select(
+    "pid", "syear", "ple0008", "plh0035", "ple0055", "ple0056", "ple0072", "ple0081_h", "ple0086_v4",
+    "ple0080_v2", "ple0086_v1", "ple0086_v4", paste0("ple00", 11:23),
+    "ple0004", "ple0005", "ple0095", "plh0182", "plh0171",
+    "plh0042", "plh0033", "plh0032", "ple0010_h", "ple0006", "ple0007"
+  )
+cat("Main dataset dimensions:", dim(main), "\n")
+```
+
+## 1.3 Merge with Other Datasets
+
+```{r}
+# Merge with `pgen` dataset
+data_pgen <- read_dta('/Users/salmahoumane/Documents/R/pgen.dta') %>%
+  select("pid", "syear", "pgerwzeit", "pgemplst", "pglabnet", "pgtatzeit", "pgexpue", "pgstib","pgfamstd", "pgisced11")
+cat("PGEN dataset dimensions:", dim(data_pgen), "\n")
+main_before_merge <- dim(main)  # Store dimensions before merge
+main <- merge(main, data_pgen, by = c("pid", "syear"), all.x = TRUE)
+cat("After merging with pgen: Rows =", nrow(main), "Cols =", ncol(main), "\n")
+cat("Same number of rows then the main dataset with 7 new rows -> Merge successful")
+
+# Check for duplicate rows introduced during merge
+duplicates <- main %>%
+  group_by(pid, syear) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+if (nrow(duplicates) > 0) {
+  cat("Warning: Duplicates detected after merging with pgen!\n")
+  print(duplicates)
+} else {
+  cat("No duplicates found after merging with pgen.\n")
+}
+
+# Merge with `ppathl` dataset
+data_ppathl <- read_dta('/Users/salmahoumane/Documents/R/ppathl.dta') %>%
+  select("pid", "hid", "syear", "psample", "gebjahr", "sex", "migback", "germborn")
+cat("PPATHL dataset dimensions:", dim(data_ppathl), "\n")
+main_before_ppathl <- dim(main)  # Store dimensions before second merge
+
+main <- left_join(main, data_ppathl, by = c("pid", "syear"))
+cat("After merging with ppathl: Rows =", nrow(main), "Cols =", ncol(main), "\n")
+cat("Same number of rows then the main dataset with 6 new rows -> Merge successful")
+
+# Final snapshot of dimensions
+cat("Final dataset dimensions after all merges:", dim(main), "\n")
+```
+
+## 1.4 Main filtering: Analysis post 1999
+
+```{r}
+# Drop observations prior to 1999
+main <- main %>%
+  filter(syear >= 1999)
+cat("Dimensions:", dim(main), "\n")
+```
+
+# 2. Outcome Variables: Subjective Health
+
+## 2.1 Health
+
+```{r}
+# Clean and rename the `health` variable
+main <- main %>%
+  rename(health = ple0008) %>%
+  filter(health != -1) %>%  # Filter valid health values -> 398 observations dropped
+    mutate(health = case_when(health == 5 ~ 1, # Reverse the scale: 1 -> 5, 5 -> 1
+                            health == 4 ~ 2,
+                            health == 3 ~3,
+                            health == 2 ~ 4,
+                            health == 1 ~ 5))
+
+sum(is.na(main$health))  # no missings
+
+# Visualisation: Bar plot
+ggplot(main, aes(x = factor(health))) +
+  geom_bar(fill = "steelblue") +
+  labs(
+    title = "Distribution of Self-Assessed Health",
+    x = "Health Category (1 = Poor, 5 = Excellent)",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## 2.2 Worries About Health
+
+```{r}
+# Create `worr_health_categorical` and `worr_health_dummy`
+main <- main %>%
+  rename(worr_health_categorical = plh0035) %>%
+  filter(worr_health_categorical != -1 & worr_health_categorical!= -4) %>% # drop those who refused to answer -> 1287 obs
+  mutate(
+    worr_health_categorical = case_when(
+      worr_health_categorical < 0 ~ NA_real_,
+      TRUE ~ worr_health_categorical
+    )
+  ) %>%
+  group_by(pid) %>%
+  mutate(
+    worr_health_categorical = if_else(
+      syear %in% c(2011, 2012, 2013) & is.na(worr_health_categorical), #impute the years 2011-2013 because 11000 observations werent asked this question in these years
+      floor(
+        mean(
+          worr_health_categorical[syear %in% c(2010, 2014)],
+          na.rm = TRUE
+        )
+      ),
+      worr_health_categorical
+    )
+  ) %>%
+  ungroup() %>%
+  drop_na(worr_health_categorical) %>% # 1032
+  mutate(worr_health_categorical = case_when(
+                            worr_health_categorical == 3 ~ 1, # Reverse the scale: 1 = no worries
+                            worr_health_categorical == 2 ~ 2,
+                            worr_health_categorical == 1 ~ 3), # 3 = lots of worries
+    worr_health_dummy = if_else(
+      worr_health_categorical >= 2, 1, 0
+    )
+  )
+
+# Visualisation: Bar plot (categorical)
+ggplot(main, aes(x = worr_health_categorical)) +
+  geom_bar(fill = "coral") +
+  labs(
+    title = "Distribution of Worries About Health",
+    x = "Worries About Health",
+    y = "Count"
+  ) +
+  theme_minimal()
+# Visualisation: Pie Char (dummy)
+main %>%
+  group_by(worr_health_dummy) %>%
+  summarize(count = n()) %>%
+  mutate(
+    proportion = count / sum(count),
+    label = paste0(round(proportion * 100, 1), "%")
+  ) %>%
+  ggplot(aes(x = "", y = proportion, fill = factor(worr_health_dummy))) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(
+    title = "Proportion of Health Worry (Dummy)",
+    fill = "Health Worry (Dummy)"
+  ) +
+  theme_minimal() +
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5))
+```
+
+## 2.3 Health Trends
+
+```{r}
+# Create health decline dummy for 2 years into the future
+main <- main %>%
+  arrange(pid, syear) %>%  # Ensure data is sorted by pid and syear
+  group_by(pid) %>%
+  mutate(
+    health_in_2yrs = dplyr::lead(health, n = 2, order_by = syear),  # Use dplyr::lead()
+    health_decline_2yrs = case_when(
+      !is.na(health_in_2yrs) & health_in_2yrs < health ~ 1,  # Decline
+      !is.na(health_in_2yrs) & health_in_2yrs >= health ~ 0,  # No decline
+      TRUE ~ NA_real_  # NA for missing data
+    )
+  ) %>%
+  ungroup()
+
+# Check for missing values in health_in_2yrs
+sum(is.na(main$health_in_2yrs))  # 81.113
+#Visualisation: Line plot
+# Line plot: Average health over years
+main %>%
+  group_by(syear) %>%
+  summarize(avg_health = mean(health, na.rm = TRUE)) %>%
+  ggplot(aes(x = syear, y = avg_health)) +
+  geom_line(color = "darkgreen") +
+  geom_point(color = "darkgreen") +
+  labs(
+    title = "Average Self-Assessed Health Over Years",
+    x = "Survey Year",
+    y = "Average Health"
+  ) +
+  theme_minimal()
+```
+
+# 3. Predictors
+## 3.2 Life Satisfaction and Health Satisfaction
+```{r}
+# Create life_satisfaction and health_satisfaction variables
+# Step 1: Track Missing Categories Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    plh0182_NA = sum(is.na(plh0182)),
+    plh0182_not_asked = sum(plh0182 %in% c(-8, -5), na.rm = TRUE),
+    plh0182_other_neg = sum(plh0182 < 0 & !(plh0182 %in% c(-8, -5)), na.rm = TRUE),
+    plh0171_NA = sum(is.na(plh0171)),
+    plh0171_not_asked = sum(plh0171 %in% c(-8, -5), na.rm = TRUE),
+    plh0171_other_neg = sum(plh0171 < 0 & !(plh0171 %in% c(-8, -5)), na.rm = TRUE)
+  )
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Drop those who refused to answer or answered invalidly
+main <- main %>%
+  filter(!(plh0182 %in% c(-1, -2, -3) | plh0171 %in% c(-1, -2, -3))) # 908 observations
+
+# Step 3: Impute remaining Values for plh0182 and plh0171 with Max 2-Year Lag/Lead
+main <- main %>%
+  arrange(pid, syear) %>%  # Ensure proper sorting
+  group_by(pid) %>%
+  mutate(
+    # Flag rows that will be imputed
+    imputed_flag_life = if_else(plh0182 %in% c(-5, -8) | is.na(plh0182), 1, 0),
+    imputed_flag_health = if_else(plh0171 %in% c(-5, -8) | is.na(plh0171), 1, 0),
+
+    # Replace -5 and -8 with NA
+    plh0182 = case_when(plh0182 %in% c(-5, -8) ~ NA_real_, TRUE ~ plh0182),
+    plh0171 = case_when(plh0171 %in% c(-5, -8) ~ NA_real_, TRUE ~ plh0171),
+
+    # Impute plh0182 (life satisfaction)
+    life_satisfaction = if_else(
+      is.na(plh0182),
+      coalesce(
+        if_else(syear - lag(syear) <= 2 & !is.na(lag(plh0182)), lag(plh0182), NA_real_),
+        if_else(dplyr::lead(syear) - syear <= 2 & !is.na(dplyr::lead(plh0182)), dplyr::lead(plh0182), NA_real_)
+      ),
+      plh0182
+    ),
+
+    # Impute plh0171 (health satisfaction)
+    health_satisfaction = if_else(
+      is.na(plh0171),
+      coalesce(
+        if_else(syear - lag(syear) <= 2 & !is.na(lag(plh0171)), lag(plh0171), NA_real_),
+        if_else(dplyr::lead(syear) - syear <= 2 & !is.na(dplyr::lead(plh0171)), dplyr::lead(plh0171), NA_real_)
+      ),
+      plh0171
+    )
+  ) %>%
+  ungroup()
+
+# Step 3: Breakdown After Imputation
+missing_breakdown_after <- main %>%
+  summarise(
+    life_satisfaction_NA = sum(is.na(life_satisfaction)),
+    health_satisfaction_NA = sum(is.na(health_satisfaction))
+  )
+
+print("Breakdown of missing values after imputation:")
+print(missing_breakdown_after)
+
+# Drop observations that are still missing
+main <- main %>%
+  filter(!is.na(life_satisfaction) & !is.na(health_satisfaction)) # 681 observations dropped
+
+# Step 4: Descriptive Statistics
+# Imputed Rows
+imputed_stats <- main %>%
+  filter(imputed_flag_life == 1 | imputed_flag_health == 1) %>%
+  summarise(
+    Life_Satisfaction_Mean = mean(life_satisfaction, na.rm = TRUE),
+    Life_Satisfaction_Median = median(life_satisfaction, na.rm = TRUE),
+    Health_Satisfaction_Mean = mean(health_satisfaction, na.rm = TRUE),
+    Health_Satisfaction_Median = median(health_satisfaction, na.rm = TRUE),
+    Count = n()
+  )
+
+# Non-Imputed Rows
+non_imputed_stats <- main %>%
+  filter(imputed_flag_life == 0 & imputed_flag_health == 0) %>%
+  summarise(
+    Life_Satisfaction_Mean = mean(life_satisfaction, na.rm = TRUE),
+    Life_Satisfaction_Median = median(life_satisfaction, na.rm = TRUE),
+    Health_Satisfaction_Mean = mean(health_satisfaction, na.rm = TRUE),
+    Health_Satisfaction_Median = median(health_satisfaction, na.rm = TRUE),
+    Count = n()
+  )
+
+print("Descriptive Statistics for Imputed Rows:")
+print(imputed_stats)
+
+print("Descriptive Statistics for Non-Imputed Rows:")
+print(non_imputed_stats)
+
+# The imputed observations display slighly larger health & life-satisfaction
+
+# Step 5: Visualizations
+# All Rows: Life Satisfaction
+ggplot(main, aes(x = factor(life_satisfaction))) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(
+    title = "Life Satisfaction - All Rows",
+    x = "Life Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Imputed Rows Only
+ggplot(main %>% filter(imputed_flag_life == 1), aes(x = factor(life_satisfaction))) +
+  geom_bar(fill = "orange", color = "black") +
+  labs(
+    title = "Life Satisfaction - Imputed Rows",
+    x = "Life Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Non-Imputed Rows Only
+ggplot(main %>% filter(imputed_flag_life == 0), aes(x = factor(life_satisfaction))) +
+  geom_bar(fill = "green", color = "black") +
+  labs(
+    title = "Life Satisfaction - Non-Imputed Rows",
+    x = "Life Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# All Rows: Health Satisfaction
+ggplot(main, aes(x = factor(health_satisfaction))) +
+  geom_bar(fill = "coral", color = "black") +
+  labs(
+    title = "Health Satisfaction - All Rows",
+    x = "Health Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Imputed Rows Only
+ggplot(main %>% filter(imputed_flag_health == 1), aes(x = factor(health_satisfaction))) +
+  geom_bar(fill = "orange", color = "black") +
+  labs(
+    title = "Health Satisfaction - Imputed Rows",
+    x = "Health Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Non-Imputed Rows Only
+ggplot(main %>% filter(imputed_flag_health == 0), aes(x = factor(health_satisfaction))) +
+  geom_bar(fill = "green", color = "black") +
+  labs(
+    title = "Health Satisfaction - Non-Imputed Rows",
+    x = "Health Satisfaction (0-10)",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## 3.2.2 Height, Weight, BMI
+```{r}
+# Process height and weight
+# Step 1: Track Missing Categories Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    height_NA = sum(is.na(ple0006)),
+    height_not_asked = sum(ple0006 %in% c(-8, -5), na.rm = TRUE),
+    height_invalid = sum(ple0006 > 245 | (ple0006 < 0 & !(ple0006 %in% c(-8, -5))), na.rm = TRUE),
+    weight_NA = sum(is.na(ple0007)),
+    weight_not_asked = sum(ple0007 %in% c(-8, -5), na.rm = TRUE),
+    weight_invalid = sum(ple0007 < 0 & !(ple0007 %in% c(-8, -5)), na.rm = TRUE)
+  )
+
+print("Breakdown of missing and invalid values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Process and Impute Height with Lag/Lead (<= 2 years)
+  # Assumption for Imputation of height: does not change significantly for adults
+main <- main %>%
+  arrange(pid, syear) %>%
+  group_by(pid) %>%
+  mutate(
+    # Track imputation flag for height
+    height_imputed = if_else(ple0006 > 245 | ple0006 <= 0 | is.na(ple0006), 1, 0),
+    # Set invalid or missing height values to missing
+    height = ifelse(ple0006 < 0 | ple0006 > 245, NA, ple0006),
+    # Forward fill missing values
+    height = zoo::na.locf(height, na.rm = FALSE),
+
+    # Backward fill missing values
+    height = zoo::na.locf(height, na.rm = FALSE, fromLast = TRUE)
+  ) %>%
+  ungroup()
+
+# Step 3: Process and Impute Weight with Lag/Lead (<= 2 years)
+#imputation: The mean weight between the last observation before the missing and the first after. And for the ones that have only one before or one after, the one but only if it is an adjacent year.
+main <- main %>%
+  filter(!(ple0007 %in% c(-1, -2, -3))) %>%
+  group_by(pid) %>%
+  arrange(syear, .by_group = TRUE) %>%
+  mutate(# Track imputation flag for height
+    weight_imputed = if_else(ple0007 <= 0 | is.na(ple0007), 1, 0),
+    ple0007 = case_when(ple0007<0 ~ NA_real_,
+                             TRUE ~ ple0007), 
+    # Create lag and lead weights
+    lag_weight = lag(ple0007),
+    lead_weight = dplyr::lead(ple0007),
+    lag_year = lag(syear),
+    lead_year = dplyr::lead(syear),
+    
+    # Apply imputation rules
+    weight = case_when(
+      is.na(ple0007) & !is.na(lag_weight) & !is.na(lead_weight) & 
+        (syear - lag_year == 1 & lead_year - syear == 1) ~ (lag_weight + lead_weight) / 2, # Mean of valid neighbors
+      is.na(ple0007) & !is.na(lag_weight) & (syear - lag_year == 1) ~ lag_weight,         # Use previous value if adjacent
+      is.na(ple0007) & !is.na(lead_weight) & (lead_year - syear == 1) ~ lead_weight,     # Use next value if adjacent
+      TRUE ~ ple0007  # Keep original if no condition is met
+    )
+  ) %>%
+  select(-lag_weight, -lead_weight, -lag_year, -lead_year) %>%  # Clean up temporary columns
+  ungroup()
+
+
+
+# Step 4: Track Missing Categories After Imputation
+missing_breakdown_after <- main %>%
+  summarise(
+    height_NA = sum(is.na(height)),
+    weight_NA = sum(is.na(weight)),
+    height_imputed = sum(height_imputed),
+    weight_imputed = sum(weight_imputed)
+  )
+
+print("Breakdown of missing values after imputation:")
+print(missing_breakdown_after)
+
+main <- main %>%
+  filter(!is.na(height) & !is.na(weight))
+
+# Step 5: Calculate BMI and Create Categorical Variable
+main <- main %>%
+  mutate(
+    BMI = as.numeric(weight / ((height / 100) ^ 2)),  # Calculate BMI
+    bmi_categorical = case_when(
+      BMI < 18.5 ~ 1, #underweight
+      BMI >= 18.5 & BMI < 25 ~ 2, #normal
+      BMI >= 25 & BMI < 30 ~ 3, #overweight
+      BMI >= 30 ~ 4, # obese
+      TRUE ~ NA_real_
+    )
+  )
+
+# Step 6: Descriptive Statistics for Imputed and Non-Imputed Rows
+# Descriptive stats for all rows
+all_stats <- main %>%
+  summarise(
+    Mean = mean(BMI, na.rm = TRUE),
+    Median = median(BMI, na.rm = TRUE),
+    Q1 = quantile(BMI, 0.25, na.rm = TRUE),
+    Q3 = quantile(BMI, 0.75, na.rm = TRUE),
+    Min = min(BMI, na.rm = TRUE),
+    Max = max(BMI, na.rm = TRUE),
+    Count = n()
+  )
+
+# Descriptive stats for imputed rows
+imputed_stats <- main %>%
+  filter(height_imputed == 1 | weight_imputed == 1) %>%
+  summarise(
+    Mean = mean(BMI, na.rm = TRUE),
+    Median = median(BMI, na.rm = TRUE),
+    Q1 = quantile(BMI, 0.25, na.rm = TRUE),
+    Q3 = quantile(BMI, 0.75, na.rm = TRUE),
+    Min = min(BMI, na.rm = TRUE),
+    Max = max(BMI, na.rm = TRUE),
+    Count = n()
+  )
+
+# Descriptive stats for non-imputed rows
+non_imputed_stats <- main %>%
+  filter(height_imputed == 0 & weight_imputed == 0) %>%
+  summarise(
+    Mean = mean(BMI, na.rm = TRUE),
+    Median = median(BMI, na.rm = TRUE),
+    Q1 = quantile(BMI, 0.25, na.rm = TRUE),
+    Q3 = quantile(BMI, 0.75, na.rm = TRUE),
+    Min = min(BMI, na.rm = TRUE),
+    Max = max(BMI, na.rm = TRUE),
+    Count = n()
+  )
+
+print("Descriptive Statistics for All Rows:")
+print(all_stats)
+
+print("Descriptive Statistics for Imputed Rows:")
+print(imputed_stats)
+
+print("Descriptive Statistics for Non-Imputed Rows:")
+print(non_imputed_stats)
+
+# Step 7: Visualizations
+# Histogram for all rows
+ggplot(main, aes(x = BMI)) +
+  geom_histogram(binwidth = 1, fill = "purple", color = "black", alpha = 0.7) +
+  labs(
+    title = "BMI Distribution - All Rows",
+    x = "BMI",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Histogram for imputed rows
+ggplot(main %>% filter(height_imputed == 1 | weight_imputed == 1), aes(x = BMI)) +
+  geom_histogram(binwidth = 1, fill = "orange", color = "black", alpha = 0.7) +
+  labs(
+    title = "BMI Distribution - Imputed Rows",
+    x = "BMI",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Histogram for non-imputed rows
+ggplot(main %>% filter(height_imputed == 0 & weight_imputed == 0), aes(x = BMI)) +
+  geom_histogram(binwidth = 1, fill = "green", color = "black", alpha = 0.7) +
+  labs(
+    title = "BMI Distribution - Non-Imputed Rows",
+    x = "BMI",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+## 3.2.3 Smoking
+Number of Cigarettes has too little observations
+```{r}
+# Create `smoking_dummy`
+# Step 1: Track Missing Categories Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    ple0081_h_NA = sum(is.na(ple0081_h)),
+    ple0081_h_not_asked = sum(ple0081_h %in% c(-5, -8), na.rm = TRUE),
+    ple0081_h_invalid = sum(ple0081_h < 0 & !(ple0081_h %in% c(-8, -5)), na.rm = TRUE)
+  )
+
+print("Breakdown of missing and invalid values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Drop those who refused to answer or answered invalidly
+main <- main %>%
+  filter(!(ple0081_h %in% c(-1, -3) | ple0086_v4 %in% c(-1, -3))) # 137 observations
+
+# Step 3.1: Impute Smoking Status (ple0081_h) with Lag and Lead (Max 2 Years)
+main <- main %>%
+  arrange(pid, syear) %>%
+  group_by(pid) %>%
+  mutate(
+    # Flag missing smoking values
+    smoking_imputed = if_else(ple0081_h %in% c(-5, -8), 1, 0),
+
+    # Determine if the individual was ever observed to smoke
+    ever_smoked = any(ple0081_h == 1, na.rm = TRUE),
+
+    # Impute smoking values
+    ple0081_h = case_when(
+      # If missing and the person ever smoked, impute using lag/lead within 2 years
+      ple0081_h %in% c(-5, -8) & ever_smoked ~ {
+        lag_val <- if_else(syear - lag(syear) <= 2, lag(ple0081_h), NA_real_)
+        lead_val <- if_else(dplyr::lead(syear) - syear <= 2, dplyr::lead(ple0081_h), NA_real_)
+        if_else(
+          !is.na(lag_val) & !is.na(lead_val),
+          (lag_val + lead_val) / 2,
+          coalesce(lag_val, lead_val)
+        )
+      },
+      # If missing and the person never smoked, set to 2
+      ple0081_h %in% c(-5, -8) & !ever_smoked ~ 2,
+
+      # Keep observed positive smoking values
+      ple0081_h > 0 ~ ple0081_h,
+
+      # Set other invalid cases to NA
+      TRUE ~ NA_real_
+    ),
+
+    # Create smoking dummy (1 = Smoker, 0 = Non-Smoker)
+    smoking_dummy = case_when(
+      ple0081_h <= 1.5 ~ 1,
+      ple0081_h > 1.5 ~ 0,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  ungroup()
+
+
+# Step 3: Remove Remaining Invalid or Negative Values
+main <- main %>%
+  filter(!is.na(smoking_dummy))
+
+# Step 4: Descriptive Statistics
+# Smoking Dummy
+smoking_stats_all <- main %>%
+  summarise(
+    Mean_Smoking = mean(smoking_dummy, na.rm = TRUE),
+    Count = n()
+  )
+
+smoking_stats_imputed <- main %>%
+  filter(smoking_imputed == 1) %>%
+  summarise(
+    Mean_Smoking = mean(smoking_dummy, na.rm = TRUE),
+    Count = n()
+  )
+
+smoking_stats_non_imputed <- main %>%
+  filter(smoking_imputed == 0) %>%
+  summarise(
+    Mean_Smoking = mean(smoking_dummy, na.rm = TRUE),
+    Count = n()
+  )
+
+print("Descriptive Statistics for Smoking (All Rows):")
+print(smoking_stats_all)
+
+print("Descriptive Statistics for Smoking (Imputed Rows):")
+print(smoking_stats_imputed)
+
+print("Descriptive Statistics for Smoking (Non-Imputed Rows):")
+print(smoking_stats_non_imputed)
+
+
+# Step 6: Visualizations
+# Smoking Dummy
+ggplot(main, aes(x = factor(smoking_dummy))) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(title = "Smoking Status - All Rows", x = "Smoking Status (1 = Yes, 0 = No)", y = "Count") +
+  theme_minimal()
+
+ggplot(main %>% filter(smoking_imputed == 1), aes(x = factor(smoking_dummy))) +
+  geom_bar(fill = "orange", color = "black") +
+  labs(title = "Smoking Status - Imputed Rows", x = "Smoking Status (1 = Yes, 0 = No)", y = "Count") +
+  theme_minimal()
+
+ggplot(main %>% filter(smoking_imputed == 0), aes(x = factor(smoking_dummy))) +
+  geom_bar(fill = "green", color = "black") +
+  labs(title = "Smoking Status - Non-Imputed Rows", x = "Smoking Status (1 = Yes, 0 = No)", y = "Count") +
+  theme_minimal()
+
+
+```
+
+## 3.2.4 Diet: Special Potential Specification because surveyed every second year from 2004-2014
+Kick this out because it is way too little observations
+
+
+# 4. Control Variables
+## 4.1 Worries about job security, financial situation, and economic situation 
+```{r}
+# Create variables for worries about job security, financial situation, and economic situation
+# Step 1: Track Missing Categories Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    plh0042_refused = sum(plh0042 == -1, na.rm = TRUE),
+    plh0042_NA = sum(plh0042 %in% c(-5, -6), na.rm = TRUE),
+    plh0042_not_applicable = sum(plh0042 == -2, na.rm = TRUE),
+    plh0033_refused = sum(plh0033 == -1, na.rm = TRUE),
+    plh0033_invalid = sum(plh0033 == -2, na.rm = TRUE),
+    plh0032_NA = sum(plh0032  == -5, na.rm = TRUE),
+    plh0032_invalid = sum(plh0032  == -1, na.rm = TRUE)
+  )
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Lag/Lead Imputation (Max 2 Years)
+main <- main %>%
+  filter(plh0033 != -1 & plh0042 != -1 & plh0032  != -1 & plh0033 != -2 & plh0032 != -2) %>%
+  arrange(pid, syear) %>%  # Ensure data is ordered by pid and syear
+  group_by(pid) %>%
+  mutate(
+    # Impute -5 or -8 for `plh0042` with max 2-year lag/lead
+    worries_job_imputed = if_else(plh0042 %in% c(-5, -6), 1, 0),
+    plh0042 = case_when(
+      plh0042 %in% c(-5, -8) ~ {
+        lag_val <- if_else(syear - lag(syear) <= 2, lag(plh0042), NA_real_)
+        lead_val <- if_else(dplyr::lead(syear) - syear <= 2, dplyr::lead(plh0042), NA_real_)
+        if_else(!is.na(lag_val) & !is.na(lead_val), (lag_val + lead_val) / 2, coalesce(lag_val, lead_val))
+      },
+      plh0042 == -2 ~ 3,
+      TRUE ~ plh0042
+    ),
+    # not necessary for plh0033 because no remaining missings
+    # Repeat for `plh0032`
+    worries_economic_imputed = if_else(plh0032 == -5, 1, 0),
+    plh0032 = case_when(
+      plh0032 == -5 ~ {
+        lag_val <- if_else(syear - lag(syear) <= 2, lag(plh0032), NA_real_)
+        lead_val <- if_else(dplyr::lead(syear) - syear <= 2, dplyr::lead(plh0032), NA_real_)
+        if_else(!is.na(lag_val) & !is.na(lead_val), (lag_val + lead_val) / 2, coalesce(lag_val, lead_val))
+      },
+      TRUE ~ plh0032
+    )
+  ) %>%
+  ungroup() 
+
+# Step 3: Create Categorical and Dummy Variables
+main <- main %>%
+  mutate(
+    worr_job_categorical = case_when(plh0042 == 1 ~ 3, # no worries
+                                     plh0042 == 3 ~ 1, # large worries
+                                     TRUE ~ plh0042),
+    worr_financial_categorical = case_when(plh0033 == 1 ~ 3, # no worries
+                                          plh0033 == 3 ~ 1, # large worries
+                                          TRUE ~ plh0033),
+    worr_economic_categorical = case_when(plh0032 == 1 ~ 3, # no worries
+                                          plh0032 == 3 ~ 1, # large worries
+                                          TRUE ~ plh0032),
+    worr_job_dummy = ifelse(worr_job_categorical >= 2, 1, 0),
+    worr_financial_dummy = ifelse(worr_financial_categorical >= 2, 1, 0),
+    worr_economic_dummy = ifelse(worr_economic_categorical >= 2, 1, 0)
+  )
+
+main <- main %>%
+  filter(!is.na(worr_job_categorical) & !is.na(worr_financial_categorical)& !is.na(worr_economic_categorical)) # XXX observations dropped
+
+```
+
+# Descriptive Statistics
+
+```{r}
+# Define descriptive_stats function
+descriptive_stats <- function(data, condition) {
+  data %>%
+    filter(!!rlang::enquo(condition)) %>%  # Use enquo for capturing condition
+    summarise(
+      Job_Worries_Mean = mean(as.numeric(worr_job_dummy), na.rm = TRUE),
+      Financial_Worries_Mean = mean(as.numeric(worr_financial_dummy), na.rm = TRUE),
+      Economic_Worries_Mean = mean(as.numeric(worr_economic_dummy), na.rm = TRUE),
+      Count = n()
+    )
+}
+# Calculate statistics for all rows, imputed rows, and non-imputed rows
+all_stats <- descriptive_stats(main, TRUE)
+imputed_stats <- descriptive_stats(main, worries_job_imputed == 1 | worries_economic_imputed == 1)
+non_imputed_stats <- descriptive_stats(main, worries_job_imputed == 0 & worries_economic_imputed == 0)
+
+print("Descriptive Statistics for All Rows:")
+print(all_stats)
+print("Descriptive Statistics for Imputed Rows:")
+print(imputed_stats)
+print("Descriptive Statistics for Non-Imputed Rows:")
+print(non_imputed_stats)
+
+# Step 5: Visualizations
+# Drop rows with NAs in worry-related columns
+main <- main %>%
+  drop_na(worr_job_categorical, worr_financial_categorical, worr_economic_categorical)
+
+# Distribution of Worry Levels - All Rows
+main %>%
+  select(worr_job_categorical, worr_financial_categorical, worr_economic_categorical) %>%
+  pivot_longer(cols = everything(), names_to = "Worry_Type", values_to = "Worry_Level") %>%
+  ggplot(aes(x = Worry_Level, fill = Worry_Type)) +
+  geom_bar(position = "dodge", color = "black") +
+  labs(
+    title = "Distribution of Worry Levels - All Rows",
+    x = "Worry Level",
+    y = "Count",
+    fill = "Worry Type"
+  ) +
+  theme_minimal()
+
+# Imputed Rows
+main %>%
+  filter(worries_job_imputed == 1 | worries_economic_imputed == 1) %>%
+  pivot_longer(cols = c(worr_job_categorical, worr_economic_categorical), 
+               names_to = "Worry_Type", values_to = "Worry_Level") %>%
+  ggplot(aes(x = Worry_Level, fill = Worry_Type)) +
+  geom_bar(position = "dodge", color = "black") +
+  labs(
+    title = "Distribution of Worry Levels - Imputed Rows",
+    x = "Worry Level",
+    y = "Count",
+    fill = "Worry Type"
+  ) +
+  theme_minimal()
+
+# Non-Imputed Rows
+main %>%
+  filter(worries_job_imputed == 0 & worries_economic_imputed == 0) %>%
+  pivot_longer(cols = c(worr_job_categorical, worr_economic_categorical), 
+               names_to = "Worry_Type", values_to = "Worry_Level") %>%
+  ggplot(aes(x = Worry_Level, fill = Worry_Type)) +
+  geom_bar(position = "dodge", color = "black") +
+  labs(
+    title = "Distribution of Worry Levels - Non-Imputed Rows",
+    x = "Worry Level",
+    y = "Count",
+    fill = "Worry Type"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.2 Tenure
+```{r}
+# Step 1: Breakdown Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    refused = sum(pgerwzeit %in% c(-1, -3), na.rm = TRUE),
+    not_applicable = sum(pgerwzeit == -2, na.rm = TRUE)
+  )
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Clean Tenure
+main <- main %>%
+  filter(pgerwzeit != -1 & pgerwzeit != -3) %>%
+  mutate(tenure = case_when(pgerwzeit == -2 ~ 0,
+                            TRUE ~ pgerwzeit))
+
+# Step 3: Visualizations
+# All Rows
+ggplot(main, aes(x = tenure)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Tenure - All Rows",
+    x = "Tenure (Years)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.3 Net Income and Working time per week
+```{r}
+# Step 1: Breakdown Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    refused = sum(pglabnet %in% c(-1, -3), na.rm = TRUE),
+    not_applicable = sum(pglabnet == -2, na.rm = TRUE)
+  )
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Transform `pglabnet` into `net_income`
+main <- main %>%
+  mutate(net_income = case_when(pglabnet == -2 ~ 0,
+                            TRUE ~ pglabnet))
+
+
+# Step 1: Breakdown Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    refused = sum(pgtatzeit %in% c(-1, -3), na.rm = TRUE),
+    not_applicable = sum(pgtatzeit == -2, na.rm = TRUE)
+  )
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Transform `pgtatzeit` into `work_time_weekly`
+main <- main %>%
+  filter(pgtatzeit != -1 & pgtatzeit != -3) %>% 
+  mutate(
+    work_time_weekly = case_when(pgtatzeit == -2 ~ 0,
+                            TRUE ~ pgtatzeit))
+
+# Summary Statistics for Net Income
+# All rows
+net_income_all <- main %>%
+  summarise(
+    Mean = mean(net_income, na.rm = TRUE),
+    Median = median(net_income, na.rm = TRUE),
+    Min = min(net_income, na.rm = TRUE),
+    Max = max(net_income, na.rm = TRUE),
+    Count = sum(!is.na(net_income))
+  )
+
+
+# Summary Statistics for Work Time Weekly
+# All rows
+work_time_all <- main %>%
+  summarise(
+    Mean = mean(work_time_weekly, na.rm = TRUE),
+    Median = median(work_time_weekly, na.rm = TRUE),
+    Min = min(work_time_weekly, na.rm = TRUE),
+    Max = max(work_time_weekly, na.rm = TRUE),
+    Count = sum(!is.na(work_time_weekly))
+  )
+
+# Display Results
+print("Net Income Summary Statistics - All Rows:")
+print(net_income_all)
+
+print("\nWork Time Weekly Summary Statistics - All Rows:")
+print(work_time_all)
+
+# Plot for Net Income - All Rows
+ggplot(main, aes(x = net_income)) +
+  geom_histogram(binwidth = 500, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(
+    title = "Net Income Distribution - All Rows",
+    x = "Net Income",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Plot for Work Time Weekly - All Rows
+ggplot(main, aes(x = work_time_weekly)) +
+  geom_histogram(binwidth = 5, fill = "lightcoral", color = "black", alpha = 0.7) +
+  labs(
+    title = "Work Time Weekly Distribution - All Rows",
+    x = "Work Time (Hours/Week)",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## 4.4 Unemployment
+```{r}
+# Transform total years unemployed (pgexpue)
+# Step 1: Breakdown Before Imputation
+missing_breakdown_before <- main %>%
+  summarise(
+    not_answered = sum(pgexpue == -1 , na.rm = TRUE)) # 1278
+
+print("Breakdown of missing values before imputation:")
+print(missing_breakdown_before)
+
+# Step 2: Clean Total Years Unemployment
+main <- main %>%
+  rename(total_years_unemployment = pgexpue) %>%
+  filter(total_years_unemployment != -1)
+
+# Step 5: Visualizations
+# All Rows
+ggplot(main, aes(x = total_years_unemployment)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Total Years Unemployed - All Rows",
+    x = "Total Years Unemployed",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## 4.5 Occupational Status
+```{r}
+# Transform occupational status (pgstib)
+main <- main %>%
+  filter(pgstib != -1) %>%
+  mutate(
+    occup_status = case_when(
+      pgstib >= 210 & pgstib <= 250 ~ "Blue Collar Employee",  # Blue collar emp
+      pgstib >= 510 & pgstib <= 550 ~ "White Collar Employee",  # White collar emp
+      pgstib >= 310 & pgstib <= 340 ~ "Agricultural Employee", # agriculture emp
+      pgstib >= 410 & pgstib <= 413 ~ "Agriculture - Self-Employed", # agriculture self-emp
+      pgstib >= 610 & pgstib <= 640 ~ "Public Servant",  # Public servant
+      (pgstib >= 420 & pgstib <= 433) | pgstib == 560 ~ "White Collar - Self-Employed",  # Self-employed
+      pgstib %in% c(12, -2, 10) ~ "Unemployed",  # Unemployed
+      pgstib %in% c(11, 15) | (pgstib >= 110 & pgstib <= 150) ~ "Apprentice",  # Apprentice
+      pgstib == 13 ~ "Retired",  # Retired
+      TRUE ~ "Other"  # Assign a default category for unmatched values
+    )
+  )
+
+
+main <- main %>%
+  mutate(unemp_dummy = ifelse(occup_status == "Unemployed", 1, 0))
+
+
+#Visualisation: Bar Plot
+ggplot(main, aes(x = occup_status)) +
+  geom_bar(fill = "darkred", color = "black") +
+  labs(
+    title = "Distribution of Occupational Status",
+    x = "Occupational Status",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.6 Gender
+```{r}
+# Transform sex into male dummy
+main <- main %>%
+  filter(sex != -3) %>%
+  mutate(male = ifelse(sex == 1, 1, 0))
+
+#Visualisation: Pie Chart
+main %>%
+  group_by(male) %>%
+  summarize(count = n()) %>%
+  mutate(
+    proportion = count / sum(count),
+    label = paste0(round(proportion * 100, 1), "%")
+  ) %>%
+  ggplot(aes(x = "", y = proportion, fill = factor(male, labels = c("Female", "Male")))) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(
+    title = "Proportion of Male vs. Female",
+    fill = "Gender"
+  ) +
+  theme_minimal() +
+  geom_text(aes(label = label), position = position_stack(vjust = 0.5))
+```
+
+## 4.7 Migration Background
+```{r}
+# Transform migration background and create dummy
+main <- main %>%
+  mutate(germborn = ifelse(migback == 2, 0, 1),
+         migback=ifelse(migback >= 2, 1, 0))
+
+#Visualisation: Bar plot
+ggplot(main, aes(x = migback)) +
+  geom_bar(fill = "cyan", color = "black") +
+  labs(
+    title = "Distribution of Migration Background",
+    x = "Migration Background",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+## 4.8 Marital Status
+```{r}
+# Count the number of NA rows before imputation
+na_count_before <- sum(main$pgfamstd_dummy == -5)
+print(paste("Number of NA rows in pgfamstd_dummy before imputation:", na_count_before))
+  # depending on that make imputation
+# Transform marital status and handle NA with lag/lead logic
+main <- main %>%
+  filter(pgfamstd != -1 & pgfamstd != -3) %>%
+  mutate(rel_status = case_when(pgfamstd == 1 | pgfamstd == 7  ~ "married",
+                                pgfamstd == 2 | pgfamstd == 8  ~ "separated",
+                                pgfamstd == 3 ~ "single",
+                                pgfamstd == 4 ~ "divorced",
+                                pgfamstd == 5 ~ "widowed",
+                                pgfamstd == 6 ~ "spouse abroad",
+                                TRUE ~ NA_character_),
+         rel_status = factor(rel_status))
+
+sum(is.na(main$rel_status)) 
+
+# Drop the two missings because relationship status is too fluctuating
+main <- main %>%
+  filter(!is.na(rel_status))
+
+
+# Visualizations
+# All Rows
+ggplot(main, aes(x = rel_status)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Relationship Status - All Rows",
+    x = "Relationship Status",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+## 4.9 Age
+```{r}
+main <- main %>%
+  filter(gebjahr != -1) %>%
+  mutate(age = syear - gebjahr)
+
+# Step 5: Visualizations
+# All Rows
+ggplot(main, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Agge",
+    x = "Age",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Filter for age between 25 and 55
+main <- main %>%
+  filter(age >= 25 & age <= 55)
+
+ggplot(main, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Agge",
+    x = "Age",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+## 4.10 Education
+```{r}
+test <- main %>%
+  filter(pgisced11 != -1)
+
+sum(main$pgisced11 == -2)
+
+main <- main %>%
+  mutate(educ = as.numeric(pgisced11),
+         educ = case_when(educ < 0 ~ NA_real_,
+                             TRUE ~ educ))
+main <- main %>%
+  mutate(educ_imputed = ifelse(is.na(educ), 1,0)) %>%
+  arrange(pid, syear) %>%  # Ensure data is sorted by individual and time
+  group_by(pid) %>%
+  fill(educ, .direction = "down") %>%  # Carry forward values
+  fill(educ, .direction = "up") %>% #also carry upward because all observations are older than 25
+  ungroup() %>%
+  filter(!is.na(educ)) 
+
+# Labels
+# [1] Primary education 
+#           [2] Lower secondary education 
+#           [3] Upper secondary education 
+# [4] Post-secondary non-tertiary educati 
+#      [5] Short-cycle tertiary education 
+#      [6] Bachelor s or equivalent level 
+#        [7] Master s or equivalent level 
+#        [8] Doctoral or equivalent level 
+
+# All Rows
+ggplot(main, aes(x = educ)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Education Level - All Rows",
+    x = "Education Level",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Imputed Rows only
+main %>%
+  filter(educ_imputed == 1) %>%
+  ggplot(aes(x = educ)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Education Level - Imputed Rows",
+    x = "Education Level",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Non-Imputed Rows only
+main %>%
+  filter(educ_imputed == 0) %>%
+  ggplot(aes(x = educ)) +
+  geom_bar(fill = "skyblue", color = "black") +
+  labs(
+    title = "Distribution of Education Level - Not Imputed Rows",
+    x = "Education Level",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+# Final Cleanup: Keeping relevant & cleaned variables
+```{r}
+print(colnames(main))
+# Select only the relevant cleaned variables
+main <- main %>%
+  select(
+    pid, syear, gebjahr, migback, germborn, health, worr_health_categorical,
+    total_years_unemployment, worr_health_dummy, health_in_2yrs, health_decline_2yrs,
+    life_satisfaction, health_satisfaction, height, weight, BMI, bmi_categorical,
+    smoking_dummy, ever_smoked, worr_job_categorical, worr_financial_categorical, worr_economic_categorical, worr_job_dummy, worr_financial_dummy,worr_economic_dummy,
+    tenure, net_income, work_time_weekly, occup_status, unemp_dummy, male, rel_status,
+    age, educ
+  )
+
+# Count missing values for each column
+missing_counts <- colSums(is.na(main))
+
+# View the result
+missing_counts
+
+# Count values below 0 for each column
+below_zero_counts <- colSums(main < 0, na.rm = TRUE)
+
+# View the result
+below_zero_counts
+
+main <- main %>%
+  filter(!is.na(health_decline_2yrs) & !is.na(health_in_2yrs) & worr_job_categorical > 0 & worr_economic_categorical > 0)
+
+#Display the summary of the dataset
+skim(main)
+```
+
+# Saving the cleaned dataset
+```{r}
+# Save the final main dataset as a CSV file
+write.csv(main, "SOEP_main_final.csv", row.names = FALSE)
+```
+# Correlation Heatmap
+```{r}
+# In order to identify key predictors and relationships between variables, we create a correlation heatmap between numerical variables
+# Select numeric columns
+numeric_data <- main[, sapply(main, is.numeric)]
+
+# Calculate correlation matrix
+corr_matrix <- cor(numeric_data, use = "complete.obs")
+
+# Plot correlation heatmap
+ggcorrplot(corr_matrix, method = "circle", lab = TRUE) +
+  labs(title = "Correlation Heatmap") +
+  theme_minimal()
+
+# Set correlations below 0.5 or above -0.5 to NA
+filtered_corr <- corr_matrix
+filtered_corr[abs(filtered_corr) < 0.5] <- NA
+
+
+# Define pairs to exclude
+exclude_pairs <- list(
+  c("worr_job_dummy", "worr_job_categorical"),
+  c("worr_job_categorical", "worr_job_dummy"),
+  c("worr_economic_dummy", "worr_economic_categorical"),
+  c("worr_economic_categorical", "worr_economic_dummy"),
+  c("worr_health_dummy", "worr_health_categorical"),
+  c("worr_health_categorical", "worr_health_dummy"),
+  c("bmi_categorical", "BMI"),
+  c("BMI", "bmi_categorical"),
+  c("BMI", "weight"),
+  c("weight", "BMI"),
+  c("germborn", "migback"),
+  c("migback", "germborn"),
+  c("worr_financial_dummy", "worr_financial_categorical"),
+  c("worr_financial_categorical", "worr_financial_dummy"),
+  c("age", "gebjahr"),
+  c("gebjahr", "age"),
+  c("bmi_categorical", "weight"),
+  c("weight", "bmi_categorical"),
+  c("worr_economic_dummy", "worr_economic_categorical"),
+  c("health_satisfaction", "health"),
+  c("work_time_weekly", "net_income"),
+  c("syear", "pid"),
+  c("pid", "syear"),
+  c("weight", "height"),
+  c("worr_health_categorical", "health"),
+  c("work_time_weekly", "unemp_dummy"),
+  c("life_satisfaction", "health_satisfaction"),
+  c("worr_health_categorical", "health_satisfaction"),
+  c("health_in_2yrs", "health"),
+  c("male", "height"),
+  c("health_in_2yrs", "health_satisfaction")
+)
+
+filtered_table <- as.data.frame(as.table(filtered_corr)) %>%
+  filter(
+    !is.na(Freq),  # Exclude NA correlations
+    Var1 != Var2,  # Exclude diagonal elements
+    !(paste(Var1, Var2, sep = "_") %in% sapply(exclude_pairs, function(x) paste(x[1], x[2], sep = "_")))  # Exclude specific pairs
+  ) %>%
+  arrange(desc(abs(Freq)))  # Sort by absolute correlation
+
+# View the filtered table
+filtered_table  # Display the table
+
+# Create a bar plot
+# Rename variables for prettier and clearer names
+filtered_table <- filtered_table %>%
+  mutate(
+    Variable_Pairs = case_when(
+      Var1 == "health" & Var2 == "health_satisfaction" ~ "Health & Health Satisfaction",
+      Var1 == "height" & Var2 == "male" ~ "Height & Male",
+      Var1 == "net_income" & Var2 == "work_time_weekly" ~ "Income & Weekly Working Hours",
+      Var1 == "health" & Var2 == "health_in_2yrs" ~ "Health & Health in 2 years",
+      Var1 == "height" & Var2 == "weight" ~ "Height & Weight",
+      Var1 == "health_satisfaction" & Var2 == "health_in_2yrs" ~ "Health Satisfaction & Health & Health in 2 years",
+      Var1 == "health_satisfaction" & Var2 == "life_satisfaction" ~ "Health Satisfaction & Life Satisfaction",
+      Var1 == "health_satisfaction" & Var2 == "worr_health_categorical" ~ "Health Satisfaction & Worrying about Health",
+      Var1 == "health" & Var2 == "worr_health_categorical" ~ "Health & Worrying about Health",
+      Var1 == "unemp_dummy" & Var2 == "work_time_weekly" ~ "Unemployment & Weekly Working Hours",
+      TRUE ~ paste(Var1, Var2, sep = " & ") # Default to original pairs if not specified
+    )
+  )
+
+# Create the bar plot
+ggplot(filtered_table, aes(x = reorder(Variable_Pairs, Freq), y = Freq, fill = Freq > 0)) +
+  geom_bar(stat = "identity", color = "black") +
+  coord_flip() +  # Flip coordinates for better readability
+  labs(
+    title = "Correlation Plot"
+  ) +
+  scale_fill_manual(
+    values = c("red", "blue"),
+    guide = "none"  # Remove the legend
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.title.x = element_blank(), # Remove x-axis title
+    axis.title.y = element_blank(), # Remove y-axis title
+    axis.text.x = element_text(size = 12), # Adjust x-axis text size
+    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5) # Center and style the title
+  )
+
+
+```
+
+# Gender Disparities
+```{r}
+# In order to highlight gender disparities in health perceptions, we create these graphs per gender
+# Group data by pid and gender (male), and summarize
+main_unique <- main %>%
+  group_by(pid, male) %>%
+  summarize(
+    health = mean(health, na.rm = TRUE),
+    health_decline_2yrs = mean(health_decline_2yrs, na.rm = TRUE),
+    worr_health_dummy = mean(worr_health_dummy, na.rm = TRUE),
+    health_satisfaction = mean(health_satisfaction, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Health  per Gender: Violin Plot
+ggplot(main_unique, aes(x = factor(male), y = health, fill = factor(male))) +
+  geom_violin(trim = FALSE, alpha = 0.7) + # Add transparency to the violins
+  stat_summary(fun = "mean", geom = "point", shape = 16, size = 3, color = "black") + # Use a plain filled circle for the mean
+  geom_text(stat = "summary", fun = "mean", aes(label = round(after_stat(y), 2)), vjust = -0.5) + # Add mean values on violins
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) + # Update x-axis labels
+  labs(title = "Health Distribution by Gender", x = "Gender", y = "Health") +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.title.x = element_text(face = "bold"), # Bold x-axis title
+    axis.title.y = element_text(face = "bold"), # Bold y-axis title
+    legend.position = "none" # Remove legend
+  )
+
+# Graph for health_decline_2yrs per Gender: Histogram
+ggplot(main_unique, aes(x = factor(male), y = health_decline_2yrs, fill = factor(male))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_manual(values = c("pink", "blue"), labels = c("Female", "Male"), name = "Gender") +
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  labs(
+    title = "Health Decline in 2 Years by Gender",
+    x = "Gender",
+    y = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+
+# Graph for worr_health_dummy per Gender: Histogram
+ggplot(main_unique, aes(x = factor(male), y = worr_health_dummy, fill = factor(male))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_manual(values = c("pink", "blue"), labels = c("Female", "Male"), name = "Gender") +
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  labs(
+    title = "Health Worries by Gender",
+    x = "Gender",
+    y = "Health Worries"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid lines
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "none" # Remove legend
+  )
+
+
+# Graph for health_satisfaction per Gender: Density plot
+ggplot(main_unique, aes(x = health_satisfaction, fill = factor(male), color = factor(male))) +
+  geom_density(alpha = 0.5) + # Add transparency for overlapping areas
+  scale_fill_manual(values = c("red", "blue"), labels = c("Female", "Male")) +
+  scale_color_manual(values = c("red", "blue"), labels = c("Female", "Male")) +
+  labs(
+    title = "Density of Health Satisfaction by Gender",
+    x = "Health Satisfaction",
+    y = "Density",
+    fill = "Gender",
+    color = "Gender"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+```
+We notice that gender differences are insignificant on health variables. We, therefore, do not expect gender to be a strong predictor.
+
+
+# Educational Level Disparities
+
+```{r}
+
+# Group data by pid and educ, and summarize
+main_educ <- main %>%
+  group_by(pid, educ) %>%
+  summarize(
+    health = mean(health, na.rm = TRUE),
+    health_decline_2yrs = mean(health_decline_2yrs, na.rm = TRUE),
+    worr_health_dummy = mean(worr_health_dummy, na.rm = TRUE),
+    health_satisfaction = mean(health_satisfaction, na.rm = TRUE),
+    .groups = "drop"
+  )
+# Count of individuals per Educ
+ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), fill = factor(educ))) +
+  geom_bar(alpha = 0.7) +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Primary",
+      "2" = "Lower Secondary",
+      "3" = "Upper Secondary",
+      "4" = "Post-Secondary",
+      "5" = "Short-Cycle Tertiary",
+      "6" = "Bachelor's",
+      "7" = "Master's",
+      "8" = "Doctoral"
+    ),
+    limits = c("1", "2", "3", "4", "5", "6", "7", "8") # Exclude 0 explicitly
+  ) +
+  scale_fill_brewer(palette = "Paired", guide = "none") +
+  labs(
+    title = "Distribution of Individuals by Educational Level",
+    x = "Educational Level",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+# Health  per Educ: 
+ggplot(main_educ %>% filter(educ != 0), aes(x = health, fill = factor(educ))) +
+  geom_density(alpha = 0.7) +
+  facet_wrap(~ factor(educ), ncol = 2, labeller = as_labeller(c(
+    "1" = "Primary",
+    "2" = "Lower Secondary",
+    "3" = "Upper Secondary",
+    "4" = "Post-Secondary",
+    "5" = "Short-Cycle Tertiary",
+    "6" = "Bachelor's",
+    "7" = "Master's",
+    "8" = "Doctoral"
+  ))) +
+  scale_fill_brewer(palette = "Paired", guide = "none") +
+  labs(
+    title = "Density of Health by Educational Level",
+    x = "Health",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Graph for health_decline_2yrs per educ: 
+ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_decline_2yrs, fill = factor(educ))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Primary",
+      "2" = "Lower Secondary",
+      "3" = "Upper Secondary",
+      "4" = "Post-Secondary",
+      "5" = "Short-Cycle Tertiary",
+      "6" = "Bachelor's",
+      "7" = "Master's",
+      "8" = "Doctoral"
+    )
+  ) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Health Decline in 2 Years by Educational Level",
+    x = "Educational Level",
+    y = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Graph for worr_health_dummy per educ:
+ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = worr_health_dummy, fill = factor(educ))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Primary",
+      "2" = "Lower Secondary",
+      "3" = "Upper Secondary",
+      "4" = "Post-Secondary",
+      "5" = "Short-Cycle Tertiary",
+      "6" = "Bachelor's",
+      "7" = "Master's",
+      "8" = "Doctoral"
+    )
+  ) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Health Worries by Educational Level",
+    x = "Educational Level",
+    y = "Health Worries"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for health_satisfaction per educ: 
+ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_satisfaction, fill = factor(educ))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Primary",
+      "2" = "Lower Secondary",
+      "3" = "Upper Secondary",
+      "4" = "Post-Secondary",
+      "5" = "Short-Cycle Tertiary",
+      "6" = "Bachelor's",
+      "7" = "Master's",
+      "8" = "Doctoral"
+    )
+  ) +
+  scale_fill_brewer(palette = "Paired", guide = "none") + # Hide legend
+  labs(
+    title = "Health Satisfaction by Educational Level",
+    x = "Educational Level",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+```
+Our dataset mostly contains individuals with upper secondary education levels, with only a few primary school level and doctoral level. We expect those 2 groups to have a high variance.
+
+In all graphs, we notice the same results: positive health perception as well as health satisfaction increases with education, and negative health perception through worrying or health decline decreases with education. We expect education to be correlated with income: people with higher education levels get higher salaries so the effects might be linked.
+
+
+# Income Level Disparities
+
+There are 3 individuals with income over 40k, we will be dropping them
+
+```{r}
+# Aggregate data to calculate mean net income for each pid
+cleaned_main <- main %>%
+  group_by(pid) %>%
+  summarize(net_income = mean(net_income, na.rm = TRUE), .groups = "drop") %>%
+  filter(net_income <= 40000) # Remove rows where mean income > 40000
+
+# Distribution of income variable
+ggplot(cleaned_main, aes(x = net_income)) +
+  geom_histogram(binwidth = 500, fill = "blue", color = "black", alpha = 0.7) +
+  labs(
+    title = "Histogram of Net Income Distribution",
+    x = "Net Income",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Group data by pid and educ, and summarize
+income_data <- main %>%
+  filter(net_income < 40000) %>%
+  group_by(pid, net_income) %>%
+  summarize(
+    health = mean(health, na.rm = TRUE),
+    health_decline_2yrs = mean(health_decline_2yrs, na.rm = TRUE),
+    worr_health_dummy = mean(worr_health_dummy, na.rm = TRUE),
+    health_satisfaction = mean(health_satisfaction, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Health  per Income: 
+ggplot(income_data, aes(x = net_income, y = health)) +
+  stat_summary_bin(fun = "mean", bins = 30, geom = "point", color = "blue", size = 2) +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(
+    title = "Health vs. Income (Binned Scatter Plot)",
+    x = "Net Income",
+    y = "Average Health"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for health_decline_2yrs per income: 
+income_data <- income_data %>%
+  mutate(net_income_bin = cut(net_income, breaks = 10)) # Create income bins
+# Reformat income bins into human-readable labels
+income_data <- income_data %>%
+  mutate(
+    net_income_bin = cut(
+      net_income, 
+      breaks = 10, 
+      labels = c(
+        "< 2.5K", 
+        "2.5K - 5K", 
+        "5K - 7.5K", 
+        "7.5K - 10K", 
+        "10K - 12.5K", 
+        "12.5K - 15K", 
+        "15K - 17.5K", 
+        "17.5K - 20K", 
+        "20K - 22.5K", 
+        "> 22.5K"
+      )
+    )
+  )
+
+ggplot(income_data, aes(x = net_income_bin, y = health_decline_2yrs, fill = net_income_bin)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Health Decline by Income (Binned)",
+    x = "Net Income (Binned)",
+    y = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for worr_health_dummy per income:
+ggplot(income_data, aes(x = worr_health_dummy, fill = net_income_bin)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(
+    values = c(
+      "#E41A1C", # Red
+      "#377EB8", # Blue
+      "#4DAF4A", # Green
+      "#984EA3", # Purple
+      "#FF7F00", # Orange
+      "#FFFF33", # Yellow
+      "#A65628", # Brown
+      "#F781BF", # Pink
+      "#999999", # Gray
+      "#66C2A5"  # Teal
+    ),
+    name = "Net Income (Binned)"
+  ) +
+  labs(
+    title = "Density of Health Worries by Income",
+    x = "Health Worries",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid lines
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+# Group data by income bins and calculate average health satisfaction
+heatmap_data <- income_data %>%
+  mutate(net_income_bin = cut(
+    net_income, 
+    breaks = 10, 
+    labels = c(
+      "< 2.5K", 
+      "2.5K - 5K", 
+      "5K - 7.5K", 
+      "7.5K - 10K", 
+      "10K - 12.5K", 
+      "12.5K - 15K", 
+      "15K - 17.5K", 
+      "17.5K - 20K", 
+      "20K - 22.5K", 
+      "> 22.5K"
+    )
+  )) %>%
+  group_by(net_income_bin) %>%
+  summarize(avg_health_satisfaction = mean(health_satisfaction, na.rm = TRUE), .groups = "drop")
+
+# Create the heatmap
+ggplot(heatmap_data, aes(x = net_income_bin, y = 1, fill = avg_health_satisfaction)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "blue", name = "Avg Satisfaction") +
+  labs(
+    title = "Average Health Satisfaction by Income Group",
+    x = "Net Income (Binned)",
+    y = "",
+    fill = "Avg Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold")
+  )
+
+
+```
+Most of the participants in this dataset have  a net income lower than 5000 euros and we see that for those, the higher the income, the higher the average health as we have a positively sloped line. However, for people with higher than 5000 euros income, we see a high variance, with some outliers therefore the negative trend cannot be confirmed.
+
+
+# Box Plot of Net Income by Education Level
+
+```{r}
+ggplot(main, aes(x = factor(educ), y = net_income, fill = factor(educ))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Primary",
+      "2" = "Lower Secondary",
+      "3" = "Upper Secondary",
+      "4" = "Post-Secondary",
+      "5" = "Short-Cycle Tertiary",
+      "6" = "Bachelor's",
+      "7" = "Master's",
+      "8" = "Doctoral"
+    )
+  ) +
+  scale_fill_brewer(palette = "Blues", guide = "none") + # Use a blue color palette
+  labs(
+    title = "Net Income by Education Level",
+    x = "Education Level",
+    y = "Net Income"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid lines
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+```
+There is not a significant relationship between education level and net income. 
+
+# Age Disparities
+
+```{r}
+# Distribution of age variable
+ggplot(main, aes(x = age)) +
+  geom_histogram(aes(y = ..density..), binwidth = 5, fill = "lightblue", color = "black", alpha = 0.7) +
+  geom_density(color = "blue", size = 1) +
+  labs(
+    title = "Combined Histogram and Density Plot of Age Distribution",
+    x = "Age",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+# Health  per age: 
+age_data <- main %>%
+  filter(!is.na(age)) %>% # Remove NA values in the age column
+  mutate(
+    age_group = cut(
+      age,
+      breaks = c(25, 30, 35, 40, 45, 50, 55), # Define the breaks explicitly
+      include.lowest = TRUE, # Ensures 25 is included in the first group
+      right = TRUE, # Ensures 55 is included in the last group
+      labels = c("[25-30)", "[30-35)", "[35-40)", "[40-45)", "[45-50)", "[50-55]") # Labels with brackets
+    )
+  )
+
+
+# Create violin plot for health by 5-year age groups
+ggplot(age_data, aes(x = age_group, y = health, fill = age_group)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Distribution of Health by 5-Year Age Groups",
+    x = "Age Group",
+    y = "Health"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Graph for health_decline_2yrs per age: 
+ggplot(age_data, aes(x = age_group, fill = factor(health_decline_2yrs))) +
+  geom_bar(position = "fill", alpha = 0.7) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("No Decline", "Decline")
+  ) +
+  labs(
+    title = "Proportion of Health Decline by Age Group",
+    x = "Age Group",
+    y = "Proportion",
+    fill = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+# Graph for worr_health_dummy per age:
+ggplot(age_data, aes(x = age_group, fill = factor(worr_health_dummy))) +
+  geom_bar(position = "fill", alpha = 0.7) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("No Worries", "Worries")
+  ) +
+  labs(
+    title = "Proportion of Health Worries by Age Group",
+    x = "Age Group",
+    y = "Proportion",
+    fill = "Health Worry"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+# Graph for health_satisfaction per age: 
+ggplot(age_data, aes(x = age_group, y = health_satisfaction, fill = age_group)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Health Satisfaction by Age Group",
+    x = "Age Group",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+```
+In our dataset, the most participants we have are around the age of 45. For all health variables, we notice the same trend: the positive subjective health perceptions are higher within younger individuals, health worries increases with age, and health satisfaction decreases with age. We also notice that health decline is stable accross all age groups at around 24%. Because we expect older individuals to have a higher income, we should look into the intersection of age and income and their impact on health. 
+
+# Scatter Plot of Net Income vs. Age
+```{r}
+ggplot(main, aes(x = age, y = net_income)) +
+  geom_point(alpha = 0.6, color = "#4BADA9") + # Semi-transparent points
+  geom_smooth(method = "loess", color = "red", se = TRUE) + # Add a LOESS trend line
+  labs(
+    title = "Net Income vs. Age",
+    x = "Age",
+    y = "Net Income"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid lines
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+```
+# Net income does increase with age but not significantly. 
+
+# Marital Status Disparities
+
+```{r}
+# Group data by pid and rel_status, and summarize
+main_rel <- main %>%
+  group_by(pid, rel_status) %>%
+  summarize(
+    health = mean(health, na.rm = TRUE),
+    health_decline_2yrs = mean(health_decline_2yrs, na.rm = TRUE),
+    worr_health_dummy = mean(worr_health_dummy, na.rm = TRUE),
+    health_satisfaction = mean(health_satisfaction, na.rm = TRUE),
+    .groups = "drop"
+  )
+# Distribution of rel_status variable
+ggplot(main_rel, aes(x = factor(rel_status), fill = factor(rel_status))) +
+  geom_bar(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2", guide = "none") +
+  labs(
+    title = "Distribution of Relationship Status",
+    x = "Relationship Status",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Health  per rel_status: 
+ggplot(main_rel, aes(x = factor(rel_status), y = health, fill = factor(rel_status))) +
+  geom_bar(stat = "summary", fun = "mean", alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2", guide = "none") +
+  labs(
+    title = "Average Health by Relationship Status",
+    x = "Relationship Status",
+    y = "Average Health"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for health_decline_2yrs per rel_status: 
+ggplot(main_rel, aes(x = factor(rel_status), y = health_decline_2yrs, fill = factor(rel_status))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Health Decline by Relationship Status",
+    x = "Relationship Status",
+    y = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for worr_health_dummy per rel_status:
+ggplot(main_rel, aes(x = factor(rel_status), y = worr_health_dummy, fill = factor(rel_status))) +
+  geom_bar(stat = "summary", fun = "mean", alpha = 0.7) +
+  geom_text(stat = "summary", fun = "mean", aes(label = round(after_stat(y), 2)), vjust = -0.5) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Average Health Worries by Relationship Status",
+    x = "Relationship Status",
+    y = "Average Health Worries"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# Graph for health_satisfaction per rel_status: 
+ggplot(main_rel, aes(x = factor(rel_status), y = health_satisfaction, fill = factor(rel_status))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_brewer(palette = "Set2", guide = "none") +
+  labs(
+    title = "Health Satisfaction by Relationship Status",
+    x = "Relationship Status",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+```
+Our dataset contains mostly married individuals, which makes sense as our main population is around the age of 45. Average health is quite consistent across all relationship statuses, as well as health decline and health satisfaction. It is different for separated individuals and those with spouses abroad but the low number of these observations causing high variance does not allow us to make conclusions. 
+
+We notice that single individuals are the least worried about their health but we expect this to be caused by the younger age of single participants. We will therefore examine the relationship between marital status and age.
+
+
+# Box Plot of Age by Relationship Status
+```{r}
+ggplot(main, aes(x = factor(rel_status), y = age, fill = factor(rel_status))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Single",
+      "2" = "Married",
+      "3" = "Divorced",
+      "4" = "Widowed"
+    )
+  ) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(
+    title = "Age by Relationship Status",
+    x = "Relationship Status",
+    y = "Age"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid lines
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+```
+
+As expected, the single group is younger but this is not significant as the variance is quite high.
+
+# Germborn Disparities
+
+```{r}
+# Group data by pid and germborn, and summarize
+main_germborn <- main %>%
+  group_by(pid, germborn) %>%
+  summarize(
+    health = mean(health, na.rm = TRUE),
+    health_decline_2yrs = mean(health_decline_2yrs, na.rm = TRUE),
+    worr_health_dummy = mean(worr_health_dummy, na.rm = TRUE),
+    health_satisfaction = mean(health_satisfaction, na.rm = TRUE),
+    .groups = "drop"
+  )
+# Distribution of germborn variable
+ggplot(main_germborn, aes(x = factor(germborn), fill = factor(germborn))) +
+  geom_bar(alpha = 0.7) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("Born outside Germany", "Born in Germany"),
+    name = "German-Born Status"
+  ) +
+  labs(
+    title = "Distribution of German-Born Individuals",
+    x = "German-Born Status",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"), # Bold legend title
+    legend.text = element_text(size = 12) # Adjust legend text size
+  )
+
+
+# Health per germborn: 
+ggplot(main_germborn, aes(x = factor(germborn), y = health, fill = factor(germborn))) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("Born Outside of Germany", "Born in Germany"),
+    name = "German-Born Status"
+  ) +
+  labs(
+    title = "Distribution of Health by German-Born Status",
+    x = "German-Born Status",
+    y = "Health"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    axis.text.x = element_text(size = 12)
+  )
+
+# Graph for health_decline_2yrs per germborn: 
+ggplot(main_germborn, aes(x = factor(germborn), y = health_decline_2yrs, fill = factor(germborn))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("Born Outside of Germany", "Born in Germany"),
+    name = "German-Born Status"
+  ) +
+  scale_x_discrete(labels = c("0" = "Born outside of Germany", "1" = "Born in Germany")) +
+  labs(
+    title = "Health Decline by German-Born Status",
+    x = "German-Born Status",
+    y = "Health Decline"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+# Graph for worr_health_dummy per germborn:
+ggplot(main_germborn, aes(x = worr_health_dummy, fill = factor(germborn))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("Born Outside of Germany", "Born in Germany"),
+    name = "German-Born Status"
+  ) +
+  labs(
+    title = "Density of Health Worries by German-Born Status",
+    x = "Health Worries",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# Graph for health_satisfaction per germborn: 
+ggplot(main_germborn, aes(x = factor(germborn), y = health_satisfaction, fill = factor(germborn))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_manual(
+    values = c("lightblue", "blue"),
+    labels = c("Born Outside of Germany", "Born in Germany"),
+    name = "German-Born Status"
+  ) +
+  scale_x_discrete(labels = c("0" = "Born Outside of Germany", "1" = "Born in Germany")) +
+  labs(
+    title = "Health Satisfaction by German-Born Status",
+    x = "German-Born Status",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove grid
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+
+```
+Our dataset mostly contains individuals born in Germany, which makes sense as it is the SOEP data. For people born in Germany or Outside of Germany, health distributions are quite similar. We do notice that individuals born outside of Germany have smaller health declines but also higher health worries and lower health satisfaction. The small differences, the contradictory findings, merged with the fact that we only have a small sample of individuals born outside of Germany does not allow us to make conclusion. 
+
+# Relationship between subjective and objective health
+
+```{r}
+# worr_health_categorical per health_satisfaction: 
+ggplot(main, aes(x = factor(worr_health_categorical), y = health_satisfaction, fill = factor(worr_health_categorical))) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Does Not Worry",
+      "2" = "Worries a Little",
+      "3" = "Worries a Lot"
+    )
+  ) +
+  labs(
+    title = "Health Satisfaction by Health Worry Categories",
+    x = "Health Worry Category",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+# health_satisfaction per life_satisfaction: 
+ggplot(main, aes(x = life_satisfaction, y = health_satisfaction)) +
+  geom_bin2d(bins = 30) +
+  scale_fill_gradient(low = "lightblue", high = "blue", name = "Count") +
+  labs(
+    title = "Health Satisfaction vs. Life Satisfaction (Heatmap)",
+    x = "Life Satisfaction",
+    y = "Health Satisfaction"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+# health per BMI graph: 
+ggplot(main, aes(x = factor(bmi_categorical), y = health, fill = factor(bmi_categorical))) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_x_discrete(
+    labels = c(
+      "1" = "Underweight",
+      "2" = "Normal Weight",
+      "3" = "Overweight",
+      "4" = "Obese"
+    )
+  ) +
+  labs(
+    title = "Health Distribution by BMI Category",
+    x = "BMI Category",
+    y = "Health"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold")
+  )
+
+
+
+
+
+```
+Further analyses to confirm our expectations, we see that the higher the health satisfaction, the lower the individuals worry about their health and that goes both ways. 
+
+Similarly, the higher life satisfaction, the higher health satisfaction as we observe a linear increasing relationship between the two. 
+
+Analyzing BMI, we also see that normal and overweight individuals show higher health. However, due to the low amount of observations of underweight and obese individuals, we cannot make conclusions.
+
+# Detailed Summary Statistics Tables
+
+```{r}
+# Define health group labels and titles
+main <- main %>%
+  mutate(
+    health_group = case_when(
+      health >= 1 & health <= 2 ~ "1-2",
+      health > 2 & health <= 3 ~ "2-3",
+      health > 3 & health <= 5 ~ "4-5",
+      TRUE ~ NA_character_
+    )
+  )
+
+health_titles <- c(
+  "1-2" = "Poor health",
+  "2-3" = "Moderate health",
+  "4-5" = "Good health"
+)
+
+# Function to calculate summary statistics for a variable
+calculate_group_summary <- function(data, var_name, var_label) {
+  data %>%
+    summarise(
+      Mean = mean(!!sym(var_name), na.rm = TRUE),
+      SD = sd(!!sym(var_name), na.rm = TRUE),
+      Min = min(!!sym(var_name), na.rm = TRUE),
+      Max = max(!!sym(var_name), na.rm = TRUE),
+      Count = n()
+    ) %>%
+    mutate(Variable = var_label)
+}
+
+# Variables to calculate statistics for
+variables <- list(
+  list(name = "BMI", label = "BMI"),
+  list(name = "worr_health_dummy", label = "Worries About Health (Dummy)"),
+  list(name = "smoking_dummy", label = "Smoking (Dummy)"),
+  list(name = "health_in_2yrs", label = "Health in 2 Years"),
+  list(name = "health_decline_2yrs", label = "Expected Health Decline in 2 Years"),
+  list(name = "life_satisfaction", label = "Life Satisfaction"),
+  list(name = "health_satisfaction", label = "Health Satisfaction"),
+  list(name = "tenure", label = "Tenure"),
+  list(name = "net_income", label = "Net Income"),
+  list(name = "work_time_weekly", label = "Work Time Weekly"),
+  list(name = "total_years_unemployment", label = "Total Years Unemployment"),
+  list(name = "worr_job_dummy", label = "Job Worries (Dummy)"),
+  list(name = "worr_financial_dummy", label = "Financial Worries (Dummy)"),
+  list(name = "worr_economic_dummy", label = "Economic Worries (Dummy)"),
+  list(name = "male", label = "Gender (Male = 1)"),
+  list(name = "age", label = "Age"),
+  list(name = "educ", label = "Education Level")
+  
+)
+
+# Initialize a list to store tables for each group
+group_tables <- list()
+
+# Generate separate tables for each health group
+for (group in unique(main$health_group)) {
+  group_data <- main %>% filter(health_group == group)
+  group_table <- data.frame(
+    Variable = character(),
+    Mean = numeric(),
+    SD = numeric(),
+    Min = numeric(),
+    Max = numeric(),
+    Count = numeric(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (var in variables) {
+    stats <- calculate_group_summary(group_data, var$name, var$label)
+    if (!is.null(stats)) {
+      group_table <- bind_rows(group_table, stats)
+    }
+  }
+  
+  # Round all numeric columns to 1 digit after the decimal point
+  group_table <- group_table %>%
+    mutate(
+      Mean = round(Mean, 1),
+      SD = round(SD, 1),
+      Min = round(Min, 1),
+      Max = round(Max, 1)
+    )
+  
+  # Add the table to the list with the title as the key
+  table_title <- health_titles[group]
+  group_tables[[table_title]] <- group_table
+}
+
+# Display each group's table with its title
+for (title in names(group_tables)) {
+  print(paste("Summary statistics for:", title))
+  print(group_tables[[title]])
+}
+
+# Save each group's table to separate CSV files
+for (title in names(group_tables)) {
+  write.csv(group_tables[[title]], paste0("summary_table_", gsub(" ", "_", title), ".csv"), row.names = FALSE)
+}
+
+```
+
+
+# Short Summary Statistics Table
+
+```{r}
+# Define health group labels and titles
+main <- main %>%
+  mutate(
+    health_group = case_when(
+      health >= 1 & health <= 2 ~ "1-2",
+      health > 2 & health <= 3 ~ "2-3",
+      health > 3 & health <= 5 ~ "4-5",
+      TRUE ~ NA_character_
+    )
+  )
+
+health_titles <- c(
+  "1-2" = "Poor health",
+  "2-3" = "Moderate health",
+  "4-5" = "Good health"
+)
+
+# Variables to calculate statistics for
+variables <- list(
+list(name = "BMI", label = "BMI"),
+  list(name = "worr_health_dummy", label = "Worries About Health (Dummy)"),
+  list(name = "smoking_dummy", label = "Smoking (Dummy)"),
+  list(name = "health_in_2yrs", label = "Health in 2 Years"),
+  list(name = "health_decline_2yrs", label = "Expected Health Decline in 2 Years"),
+  list(name = "life_satisfaction", label = "Life Satisfaction"),
+  list(name = "health_satisfaction", label = "Health Satisfaction"),
+  list(name = "tenure", label = "Tenure"),
+  list(name = "net_income", label = "Net Income"),
+  list(name = "work_time_weekly", label = "Work Time Weekly"),
+  list(name = "total_years_unemployment", label = "Total Years Unemployment"),
+  list(name = "employment", label = "Employment Status (Employed = 1)"),
+  list(name = "worr_job_dummy", label = "Job Worries (Dummy)"),
+  list(name = "worr_financial_dummy", label = "Financial Worries (Dummy)"),
+  list(name = "worr_economic_dummy", label = "Economic Worries (Dummy)"),
+  list(name = "male", label = "Gender (Male = 1)"),
+  list(name = "age", label = "Age"),
+  list(name = "educ", label = "Education Level"),
+  list(name = "university", label = "University Degree (Dummy)")
+)
+
+# Create a summary table
+summary_table <- data.frame(Variable = sapply(variables, function(x) x$label))
+
+# Calculate means for each health category
+for (group in unique(main$health_group)) {
+  group_data <- main %>% filter(health_group == group)
+  group_means <- sapply(variables, function(var) mean(group_data[[var$name]], na.rm = TRUE))
+  summary_table[[health_titles[group]]] <- round(group_means, 1)
+}
+
+# Add row for the number of observations in each health category
+num_observations <- sapply(unique(main$health_group), function(group) nrow(main %>% filter(health_group == group)))
+summary_table <- rbind(summary_table, c("Number of Observations", num_observations))
+
+# Display the summary table
+print(summary_table)
+
+# Save the summary table as a CSV file
+write.csv(summary_table, "summary_table_short.csv", row.names = FALSE)
+
+```
+
+The table provides descriptive statistics for individuals categorized by their self-reported health status: Good health, Moderate health, and Poor health. Each variable is summarized for these three health categories, allowing us to analyze how different characteristics vary across health statuses. 
+- BMI	Individuals with poorer health tend to have higher BMI (Good: 25.3 → Poor: 27.8), suggesting a link between obesity and poorer health.
+- Worries About Health (Dummy)	Health worries increase with poorer health (Good: 0.5 → Poor: 1.0), as expected.
+- Individuals in poorer health have significantly lower expectations of good health in the future (Good: 3.9 → Poor: 2.6), also as expected.
+- Similarly, individuals in Poor health report much lower health satisfaction (Good: 8.1 → Poor: 3.8) and a decline in life satisfaction as health worsens (Good: 7.8 → Poor: 5.7).
+- Higher unemployment duration is associated with poorer health (Good: 0.7 years → Poor: 2.1 years).
+- Worries about finances and the economy increase slightly as health worsens.
+- Individuals in Good health have significantly higher incomes (Good: €1574 → Poor: €1060).
+- Poor health correlates with increasing age (Good: 39.8 → Poor: 43.3).
+- Education level decreases with poorer health (Good: 4.2 → Poor: 3.6). Lower education might contribute to worse health outcomes.
+- Surprisingly, those in poorer health report less expected decline (Good: 0.3 → Poor: 0.1). This could indicate resignation or lower health awareness.
+
+But, in general, in our dataset, ,ost individuals report Good health (45,372), with fewer in Moderate health (21,859) and the least in Poor health (9,276). This indicates a skewed distribution towards better health.
+
+
+# Modelling
+
+##  Lasso Regression 
+
+```{r}
+# Convert data to panel format
+panel_data <- pdata.frame(main, index = c("pid", "syear"))  # pid = individual ID, syear = time
+
+# Prepare data for LASSO regression
+lasso_data <- panel_data %>%
+  dplyr::select(
+    pid, syear, health_decline_2yrs, health_in_2yrs, worr_health_dummy, health, BMI, smoking_dummy, life_satisfaction, health_satisfaction,
+    tenure, net_income, work_time_weekly, total_years_unemployment, 
+    worr_job_dummy, worr_financial_dummy, worr_economic_dummy,
+    male, age, educ
+  ) %>%
+  na.omit()  # Remove missing values
+
+# Check class distribution in y
+class_distribution <- table(lasso_data$health_decline_2yrs)
+print(class_distribution)
+
+# Split the data into training and test data
+set.seed(123) # For reproducibility
+trainIndex <- createDataPartition (lasso_data$health_in_2yrs, p = 0.7, list = FALSE)
+# Convert trainIndex to a vector
+trainIndex <- as.vector(trainIndex)
+# Use the vector to split the data
+trainData <- lasso_data[trainIndex, ]
+testData <- lasso_data[-trainIndex, ]
+dim(trainData)
+
+#Standardize variables 
+# Define relevant numerical variables as a character vector
+numerical_vars <- c(
+  "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
+  "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
+  "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
+  "male", "age", "educ", "worr_health_dummy", "health"
+)
+
+# Apply pre-processing (center and scale) only to the selected numerical columns
+preProcValues <- preProcess(trainData[, numerical_vars], method = c("center", "scale"))
+
+# Standardize the training data 
+trainData[, numerical_vars] <- predict(preProcValues, trainData[, numerical_vars])
+
+# Standardize the test data
+testData[, numerical_vars] <- predict(preProcValues, testData[, numerical_vars])
+
+# Calculate the number of points in train and test subsets
+train_size <- nrow(trainData)
+test_size <- nrow(testData)
+
+# Create a data frame with the counts for waffle plot
+data_proportion <- c(`Train Data` = train_size, `Test Data` = test_size)
+
+# Create the waffle plot
+waffle(data_proportion / sum(data_proportion) * 100, 
+       rows = 10, # Adjust number of rows for granularity
+       title = "Proportion of Data Points in Training and Test Sets",
+       colors = c("#44AA99", "#CC6677"))
+
+set.seed(12345)
+
+# Set up the training control
+# Exclude pid and syear to avoid overfitting
+trainData <- trainData %>% select(-pid, -syear, -health_decline_2yrs)
+testData <- testData %>% select(-pid, -syear, -health_decline_2yrs)
+
+# Define cross-validation as the method and 10 folds 
+train_control <- trainControl(method = "cv", number = 10)
+
+# Train the LASSO model
+lasso_model <- train(
+  # use 'shealth_decline_2yrs' as the dependent and all others as independent variables
+  health_in_2yrs ~ ., 
+  # specify the traininf data
+  data = trainData,
+  # We want to use the LASSO method (glmnet)
+  method = "glmnet",
+  # Use the predefined training specification
+  trControl = train_control,
+  # Define what values for lambda we should try (tuning)
+  tuneGrid = expand.grid(alpha = 1, lambda = seq(0.001, 0.5, by = 0.001))  
+)
+
+# Display the best lambda value and model summary
+print(lasso_model$bestTune)
+# Visualize the cross-validation results
+plot(lasso_model)
+
+# Model Evaluation
+# Predict on the test set
+predictions <- predict(lasso_model, newdata = testData)
+
+# Calculate RMSE and R-squared
+rmse <- RMSE(predictions, testData$health_in_2yrs)
+r2 <- R2(predictions, testData$health_in_2yrs)
+
+# Print the evaluation metrics
+print(paste0("RMSE: ", rmse))
+print(paste0("R-squared: ", r2))
+
+# Extract the non-zero coefficients of the best model
+coefficients_regression <- coef(lasso_model$finalModel, s = lasso_model$bestTune$lambda)
+non_zero_coefficients_regression <- coefficients_regression[coefficients_regression != 0]
+print(non_zero_coefficients_regression)
+```
+
+```{r}
+#Plotting coefficients
+# Convert sparse matrix to data frame and filter non-zero coefficients
+non_zero_coefficients <- data.frame(
+  Variable = rownames(as.matrix(coefficients_regression)),
+  Coefficient = as.numeric(as.matrix(coefficients_regression))
+) %>%
+  filter(Coefficient != 0)  # Keep only non-zero coefficients
+
+# Remove the intercept and rename variables
+non_zero_coefficients <- non_zero_coefficients %>%
+  filter(Variable != "(Intercept)") %>%  # Remove the intercept
+  mutate(
+    Variable = case_when(  # Rename variables for cleaner labels
+      Variable == "health" ~ "Health",
+      Variable == "health_satisfaction" ~ "Health Satisfaction",
+      Variable == "life_satisfaction" ~ "Life Satisfaction",
+      Variable == "educ" ~ "Education",
+      Variable == "male" ~ "Gender (Male)",
+      Variable == "worr_job_dummy" ~ "Job Worries",
+      Variable == "tenure" ~ "Tenure",
+      Variable == "work_time_weekly" ~ "Weekly Work Hours",
+      Variable == "net_income" ~ "Net Income",
+      Variable == "total_years_unemployment" ~ "Total Years Unemployed",
+      Variable == "worr_financial_dummy" ~ "Financial Worries",
+      Variable == "smoking_dummy" ~ "Smoking",
+      Variable == "worr_health_dummy" ~ "Health Worries",
+      Variable == "BMI" ~ "BMI",
+      Variable == "age" ~ "Age",
+      TRUE ~ Variable  # Keep any variable not explicitly renamed
+    )
+  )
+
+# Plotting non-zero coefficients with cleaner labels
+ggplot(non_zero_coefficients, aes(x = reorder(Variable, Coefficient), y = Coefficient, fill = Coefficient > 0)) +
+  geom_bar(stat = "identity", color = "black") +
+  coord_flip() +  # Flip coordinates for better readability
+  labs(
+    title = "Non-Zero Coefficients from Lasso Regression",
+    x = "",
+    y = "Coefficient Value"
+  ) +
+  scale_fill_manual(
+    values = c("red", "blue"),
+    guide = "none"  # Remove the legend
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.title.x = element_blank(), # Remove x-axis title
+    axis.title.y = element_blank(), # Remove y-axis title
+    axis.text.x = element_text(size = 12), # Adjust x-axis text size
+    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
+    plot.title = element_text(face = "bold", size = 12, hjust = 0.5) # Center and style the title
+  )
+
+
+# Visualize the lasso model
+plot(lasso_model$finalModel, xvar = "lambda", label = TRUE)
+
+```
+
+## Interpretation
+
+
+## Lasso Classification
+
+```{r}
+# Split the data into training and test data
+set.seed(123) # For reproducibility
+trainIndex <- createDataPartition(lasso_data$health_decline_2yrs, p = 0.7, list = FALSE)
+# Convert trainIndex to a vector
+trainIndex <- as.vector(trainIndex)
+# Use the vector to split the data
+trainData <- lasso_data[trainIndex, ]
+testData <- lasso_data[-trainIndex, ]
+
+# Standardize numerical variables
+# Define relevant numerical variables as a character vector
+numerical_vars <- c(
+  "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
+  "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
+  "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
+  "male", "age", "educ", "worr_health_dummy", "health"
+)
+
+# Apply pre-processing (center and scale) only to the selected numerical columns
+preProcValues <- preProcess(trainData[, numerical_vars], method = c("center", "scale"))
+
+# Standardize the training data
+trainData[, numerical_vars] <- predict(preProcValues, trainData[, numerical_vars])
+
+# Standardize the test data
+testData[, numerical_vars] <- predict(preProcValues, testData[, numerical_vars])
+
+# Exclude pid and syear to avoid overfitting
+trainData <- trainData %>% select(-pid, -syear, -health_in_2yrs)
+testData <- testData %>% select(-pid, -syear, health_in_2yrs)
+
+# Convert health_decline_2yrs to a factor
+trainData$health_decline_2yrs <- factor(trainData$health_decline_2yrs, levels = c(0, 1), labels = c("No", "Yes"))
+testData$health_decline_2yrs <- factor(testData$health_decline_2yrs, levels = c(0, 1), labels = c("No", "Yes"))
+
+# Set up the training control
+train_control <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Train the LASSO model for classification
+set.seed(12345)
+lasso_model <- train(
+  health_decline_2yrs ~ .,  # Dependent variable
+  data = trainData,
+  method = "glmnet",        # Specify LASSO
+  family = "binomial",      # Classification for binary outcome
+  trControl = train_control,  # Use predefined training control
+  tuneGrid = expand.grid(alpha = 1, lambda = seq(0.001, 0.5, by = 0.001)), # LASSO tuning grid
+  metric = "ROC"  # Use ROC as the evaluation metric
+)
+
+# Display the best lambda value and model summary
+print(lasso_model$bestTune)
+# Visualize the cross-validation results
+plot(lasso_model)
+
+# Model Evaluation
+# Predict probabilities on the test set
+predictions <- predict(lasso_model, newdata = testData, type = "prob")
+
+# Predict binary outcomes (threshold = 0.5)
+predicted_classes <- ifelse(predictions[, "Yes"] > 0.5, "Yes", "No")
+
+# Confusion matrix
+conf_matrix <- confusionMatrix(factor(predicted_classes, levels = c("No", "Yes")), 
+                               factor(testData$health_decline_2yrs, levels = c("No", "Yes")))
+print(conf_matrix)
+
+# Evaluate model performance
+print(paste0("Accuracy: ", conf_matrix$overall["Accuracy"]))
+print(paste0("Sensitivity: ", conf_matrix$byClass["Sensitivity"]))
+print(paste0("Specificity: ", conf_matrix$byClass["Specificity"]))
+```
+
+```{r}
+# Convert sparse matrix to data frame and filter non-zero coefficients
+coefficients <- coef(lasso_model$finalModel, s = lasso_model$bestTune$lambda)
+
+non_zero_coefficients <- data.frame(
+  Variable = rownames(as.matrix(coefficients)),
+  Coefficient = as.numeric(as.matrix(coefficients))
+) %>%
+  filter(Coefficient != 0)  # Keep only non-zero coefficients
+
+# Remove the intercept and rename variables
+non_zero_coefficients <- non_zero_coefficients %>%
+  filter(Variable != "(Intercept)") %>%  # Remove the intercept
+  mutate(
+    Variable = case_when(  # Rename variables for cleaner labels
+      Variable == "health" ~ "Health",
+      Variable == "health_satisfaction" ~ "Health Satisfaction",
+      Variable == "life_satisfaction" ~ "Life Satisfaction",
+      Variable == "educ" ~ "Education",
+      Variable == "male" ~ "Gender (Male)",
+      Variable == "worr_job_dummy" ~ "Job Worries",
+      Variable == "tenure" ~ "Tenure",
+      Variable == "work_time_weekly" ~ "Weekly Work Hours",
+      Variable == "net_income" ~ "Net Income",
+      Variable == "total_years_unemployment" ~ "Total Years Unemployed",
+      Variable == "worr_financial_dummy" ~ "Financial Worries",
+      Variable == "smoking_dummy" ~ "Smoking",
+      Variable == "worr_health_dummy" ~ "Health Worries",
+      Variable == "BMI" ~ "BMI",
+      Variable == "age" ~ "Age",
+      TRUE ~ Variable  # Keep any variable not explicitly renamed
+    )
+  )
+
+# Plotting non-zero coefficients with cleaner labels
+ggplot(non_zero_coefficients, aes(x = reorder(Variable, Coefficient), y = Coefficient, fill = Coefficient > 0)) +
+  geom_bar(stat = "identity", color = "black") +
+  coord_flip() +  # Flip coordinates for better readability
+  labs(
+    title = "Non-Zero Coefficients from Lasso Classification",
+    x = "",
+    y = "Coefficient Value"
+  ) +
+  scale_fill_manual(
+    values = c("red", "blue"),
+    guide = "none"  # Remove the legend
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.title.x = element_blank(), # Remove x-axis title
+    axis.title.y = element_blank(), # Remove y-axis title
+    axis.text.x = element_text(size = 12), # Adjust x-axis text size
+    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5) # Center and style the title
+  )
+
+```
+
+## Random Forest Classification
+
+```{r}
+# Create time-lagged variables
+panel_data <- panel_data %>%
+  group_by(pid) %>%
+  arrange(syear) %>%
+  mutate(
+    health_lag1 = lag(health, 1),  # Previous year's health
+    net_income_lag1 = lag(net_income, 1),  # Previous income
+    work_time_weekly_lag1 = lag(work_time_weekly, 1),
+    tenure_lag1 = lag(tenure, 1)
+  ) %>%
+  ungroup()
+
+# Define relevant numerical variables as a character vector
+numerical_vars <- c(
+  "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
+  "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
+  "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
+  "male", "age", "educ", "worr_health_dummy", "health","health_lag1","net_income_lag1",
+  "work_time_weekly_lag1","tenure_lag1"
+)
+
+# Create rf_data by removing specific columns
+rf_data <- panel_data %>%
+  dplyr::select(-pid, -syear, -health_in_2yrs)
+
+# Ensure health_decline_2yrs Is a Factor
+rf_data$health_decline_2yrs <- factor(rf_data$health_decline_2yrs, levels = c(0, 1), labels = c("No", "Yes"))
+
+# Dynamically create the formula
+class_tree_formula <- as.formula(paste("health_decline_2yrs ~", paste(numerical_vars, collapse = " + ")))
+
+# Fit the decision tree
+class_tree <- rpart(
+  formula = class_tree_formula,
+  data = rf_data,
+  method = "class",
+  control = rpart.control(
+    cp = 0.001,       # Lower complexity parameter to allow more splits
+    minsplit = 10,    # Minimum number of observations required to split
+    minbucket = 5,    # Minimum observations in a terminal node
+    maxdepth = 10     # Maximum depth of the tree
+  )
+)
+
+# Plot the decision tree
+rpart.plot(class_tree, main = "Decision Tree: Classification")
+
+# Plot the decision tree with explicit splits
+rpart.plot(class_tree, main = "Decision Tree: Classification", type = 5)
+
+# Building the classification model
+
+set.seed(123) # For reproducibility
+# Create a training and test dataset
+trainIndex <- createDataPartition (rf_data$health_decline_2yrs, p = 0.7, list = FALSE)
+trainData <- rf_data[trainIndex, ]
+testData <- rf_data[-trainIndex, ]
+dim(trainData)
+dim(testData)
+
+# Creates a data frame (tuning_grid) where trees ranges from 5 to 400 in 
+# steps of 5. The rmse column is initialized with NA to be filled later.
+tuning_grid <- expand.grid(
+  trees = seq(5, 400, by = 5),
+  rmse  = NA
+)
+
+
+for(i in seq_len(nrow(tuning_grid))) { # Iterates over each row of the tuning_grid.
+  
+  # Fits a random forest model 
+  fit <- ranger(
+  formula    = class_tree_formula, 
+  data       = trainData, 
+  num.trees  = tuning_grid$trees[i],
+  mtry       = sqrt(5), 
+  verbose    = FALSE,
+  seed       = 123
+  )
+  # Stores the RMSE of the model 
+  tuning_grid$rmse[i] <- sqrt(fit$prediction.error)
+}
+# Plot the rmse against then number of trees
+ggplot(tuning_grid, aes(trees, rmse)) + 
+  geom_line()
+```
+
+```{r}
+# Defines the training scheme to be 10-fold cross-validation
+train_control <- trainControl(method = "cv", number = 10)
+
+tune_grid <- expand.grid(
+  mtry = seq(2,4,0.05),  # Number of variables randomly sampled at each split
+  splitrule = "gini", # Number of trees in the forest
+  min.node.size = c(1, 5, 10) # Minimum size of terminal nodes
+)
+
+# Train the Random Forest model using ranger in caret
+set.seed(123) # Set seed for reproducibility 
+rf_model <- train(
+  class_tree_formula, 
+  data = trainData, 
+  method = "ranger",             
+  trControl = train_control, 
+  tuneGrid = tune_grid, 
+  num.trees = 100 # that we got previously               
+)
+
+# Print the best model and results
+print(rf_model)
+
+# Make predictions on the test set
+predictions <- predict(rf_model, newdata = testData)
+
+```
+```{r}
+# Confusion matrix to evaluate performance
+confusionMatrix(predictions, testData$health_decline_2yrs, positive = "Yes")
+
+
+# Fit the final model 'rf_model'
+rf_final <- ranger(
+  formula    = class_tree_formula, 
+  data       = trainData, 
+  num.trees  = 100,           # Number of trees
+  probability = TRUE,         # Predict probabilities
+  importance = "impurity",    # Variable importance measure
+  mtry       = 3.15,          # Number of variables randomly sampled at each split
+  min.node.size = 10,         # Minimum node size
+  seed       = 123            # For reproducibility
+)
+
+# Get feature importance
+v1 <- vip(rf_final) # Calculate and plot the variable importance
+v1$data # Print the variable importance values
+# Plot of feature importance
+v1_table <- v1$data
+
+# Clean and rename variables
+v1_table <- v1_table %>%
+  filter(Variable != "(Intercept)") %>%  # Remove the intercept
+  mutate(
+    Variable = case_when(  # Rename variables for cleaner labels
+      Variable == "health" ~ "Health",
+      Variable == "health_lag1" ~ "Health of previous year",
+      Variable == "health_satisfaction" ~ "Health Satisfaction",
+      Variable == "life_satisfaction" ~ "Life Satisfaction",
+      Variable == "educ" ~ "Education",
+      Variable == "male" ~ "Gender (Male)",
+      Variable == "worr_job_dummy" ~ "Job Worries",
+      Variable == "tenure" ~ "Tenure",
+      Variable == "tenure_lag1" ~ "Tenure of previous year",
+      Variable == "work_time_weekly" ~ "Weekly Work Hours",
+      Variable == "work_time_weekly_lag1" ~ "Weekly Work Hours of previous year",
+      Variable == "net_income" ~ "Net Income",
+      Variable == "net_income_lag1" ~ "Net Income of previous year",
+      Variable == "total_years_unemployment" ~ "Total Years Unemployed",
+      Variable == "worr_financial_dummy" ~ "Financial Worries",
+      Variable == "smoking_dummy" ~ "Smoking",
+      Variable == "worr_health_dummy" ~ "Health Worries",
+      Variable == "BMI" ~ "BMI",
+      Variable == "age" ~ "Age",
+      TRUE ~ Variable  # Keep any variable not explicitly renamed
+    )
+  )
+
+# Create the bar plot
+ggplot(v1_table, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "#4BADA9", color = "black") +
+  coord_flip() +  # Flip coordinates for better readability
+  labs(
+    title = "Variable Importance from Random Forest",
+    x = "",
+    y = "Importance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid = element_blank(), # Remove background grid
+    axis.text.x = element_text(size = 12), # Adjust x-axis text size
+    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5), # Style and center the title
+    legend.position = "none"  # Remove the legend
+  )
+
+```
+## Partial Dependence
+
+```{r}
+# Calculate the Partial Dependence for health_lag1
+pdp_health_lag1 <- partial(
+  object = rf_final, 
+  pred.var = "health_lag1", 
+  train = trainData,
+  prob = TRUE  
+)
+
+# Calculate the Partial Dependence for male
+pdp_male <- partial(
+  object = rf_final, 
+  pred.var = "male", 
+  train = trainData,
+  prob = TRUE
+)
+
+# Calculate the Partial Dependence for bmi
+pdp_bmi <- partial(
+  object = rf_final, 
+  pred.var = "BMI", 
+  train = trainData,
+  prob = TRUE
+)
+
+#Transform tenure_lag1 into numeric
+trainData$tenure_lag1 <- as.numeric(trainData$tenure_lag1)
+
+# Calculate the Partial Dependence for tenure
+pdp_tenure <- partial(
+  object = rf_final, 
+  pred.var = "tenure_lag1", 
+  train = trainData,
+  prob = TRUE
+)
+#Transform life_satisfaction into numeric
+trainData$life_satisfaction <- as.numeric(trainData$life_satisfaction)
+# Calculate the Partial Dependence for Life Satisfaction
+pdp_life <- partial(
+  object = rf_final, 
+  pred.var = "life_satisfaction", 
+  train = trainData,
+  prob = TRUE
+)
+
+# Calculate the Partial Dependence for age
+pdp_age <- partial(
+  object = rf_final, 
+  pred.var = "age", 
+  train = trainData,
+  prob = TRUE
+)
+```
+
+```{r}
+# Plot the PDP for health_lag1
+p1 <- autoplot(pdp_health_lag1) +
+  ylab("Health Decline Prob")+
+  xlab("Health in previous year")+
+  theme_minimal()
+
+# Plot the PDP for male
+p2 <- autoplot(pdp_male) +
+  ylab("Health Decline Prob")+
+  xlab("Male")+
+  theme_minimal()
+
+# Plot the PDP for bmi
+p3 <- autoplot(pdp_bmi) +
+  ylab("Health Decline Prob")+
+  xlab("BMI")+
+  theme_minimal()
+
+# Plot the PDP for tenure
+p4 <- autoplot(pdp_tenure) +
+  ylab("Health Decline Prob")+
+  xlab("Tenure of previous year")+
+  theme_minimal()
+
+# Plot the PDP for life_satisfaction
+p5 <- autoplot(pdp_life) +
+  ylab("Health Decline Prob")+
+  xlab("Life Satisfaction")+
+  theme_minimal()
+
+# Plot the PDP for age
+p6 <- autoplot(pdp_age) +
+  ylab("Health Decline Prob")+
+  xlab("Age")+
+  theme_minimal()
+
+# Combine the plots
+(p1 | p2 ) /
+(p3 | p4 ) /
+(p5 | p6 ) 
+
+```
