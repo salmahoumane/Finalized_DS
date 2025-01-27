@@ -1308,15 +1308,15 @@ filtered_table <- filtered_table %>%
   mutate(
     Variable_Pairs = case_when(
       Var1 == "health" & Var2 == "health_satisfaction" ~ "Health & Health Satisfaction",
-      Var1 == "height" & Var2 == "male" ~ "Height & Male",
-      Var1 == "net_income" & Var2 == "work_time_weekly" ~ "Income & Weekly Working Hours",
+      Var1 == "height" & Var2 == "male" ~ "Height & Gender (Male)",
+      Var1 == "net_income" & Var2 == "work_time_weekly" ~ "Net Income & Work Time Weekly",
       Var1 == "health" & Var2 == "health_in_2yrs" ~ "Health & Health in 2 years",
       Var1 == "height" & Var2 == "weight" ~ "Height & Weight",
-      Var1 == "health_satisfaction" & Var2 == "health_in_2yrs" ~ "Health Satisfaction & Health & Health in 2 years",
+      Var1 == "health_satisfaction" & Var2 == "health_in_2yrs" ~ "Health Satisfaction & Health in 2 years",
       Var1 == "health_satisfaction" & Var2 == "life_satisfaction" ~ "Health Satisfaction & Life Satisfaction",
-      Var1 == "health_satisfaction" & Var2 == "worr_health_categorical" ~ "Health Satisfaction & Worrying about Health",
-      Var1 == "health" & Var2 == "worr_health_categorical" ~ "Health & Worrying about Health",
-      Var1 == "unemp_dummy" & Var2 == "work_time_weekly" ~ "Unemployment & Weekly Working Hours",
+      Var1 == "health_satisfaction" & Var2 == "worr_health_categorical" ~ "Health Satisfaction & Worrying about Health (Categorical)",
+      Var1 == "health" & Var2 == "worr_health_categorical" ~ "Health & Worrying about Health (Categorical)",
+      Var1 == "unemp_dummy" & Var2 == "work_time_weekly" ~ "Unemployment (Dummy) & Work Time Weekly",
       TRUE ~ paste(Var1, Var2, sep = " & ") # Default to original pairs if not specified
     )
   )
@@ -1326,22 +1326,42 @@ ggplot(filtered_table, aes(x = reorder(Variable_Pairs, Freq), y = Freq, fill = F
   geom_bar(stat = "identity", color = "black") +
   coord_flip() +  # Flip coordinates for better readability
   labs(
-    title = "Correlation Plot"
+    title = "Correlation Plot",
+    subtitle = "Visualizing Correlations Across Variable Pairs"
   ) +
   scale_fill_manual(
-    values = c("red", "blue"),
+    values = c("#FF0000", "#163E64"),  # Red for negative, dark blue for positive
     guide = "none"  # Remove the legend
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.title.x = element_blank(), # Remove x-axis title
-    axis.title.y = element_blank(), # Remove y-axis title
-    axis.text.x = element_text(size = 12), # Adjust x-axis text size
-    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5) # Center and style the title
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_blank(),  # Remove x-axis title
+    axis.title.y = element_blank(),  # Remove y-axis title
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis text
+    axis.text.y = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis text
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+#Save Graph
+ggsave("correlation_plot.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
 
 ```
 
@@ -1361,64 +1381,137 @@ main_unique <- main %>%
 
 # Health  per Gender: Violin Plot
 ggplot(main_unique, aes(x = factor(male), y = health, fill = factor(male))) +
-  geom_violin(trim = FALSE, alpha = 0.7) + # Add transparency to the violins
-  stat_summary(fun = "mean", geom = "point", shape = 16, size = 3, color = "black") + # Use a plain filled circle for the mean
-  geom_text(stat = "summary", fun = "mean", aes(label = round(after_stat(y), 2)), vjust = -0.5) + # Add mean values on violins
-  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) + # Update x-axis labels
-  labs(title = "Health Distribution by Gender", x = "Gender", y = "Health") +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "black") +  # Add transparency to the violins
+  stat_summary(fun = "mean", geom = "point", shape = 16, size = 3, color = "black") +  # Add mean points
+  geom_text(stat = "summary", fun = "mean", aes(label = round(after_stat(y), 2)), vjust = -0.5) +  # Add mean labels
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +  # Update x-axis labels
+  scale_fill_manual(values = c("#FF0000", "#163E64")) +  # Red for Female, Dark Blue for Male
+  labs(
+    title = "Health Distribution by Gender",
+    subtitle = "Violin Plot Showing Health Scores",
+    x = "Gender",
+    y = "Health"
+  ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.title.x = element_text(face = "bold"), # Bold x-axis title
-    axis.title.y = element_text(face = "bold"), # Bold y-axis title
-    legend.position = "none" # Remove legend
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+#Save Graph
+ggsave("gender_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_decline_2yrs per Gender: Histogram
 ggplot(main_unique, aes(x = factor(male), y = health_decline_2yrs, fill = factor(male))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_manual(values = c("pink", "blue"), labels = c("Female", "Male"), name = "Gender") +
-  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and define outliers
+  scale_fill_manual(values = c("#FF0000", "#163E64"), labels = c("Female", "Male"), name = "Gender") +  # Custom fill colors
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +  # Update x-axis labels
   labs(
     title = "Health Decline in 2 Years by Gender",
+    subtitle = "Boxplot Comparison of Health Decline Across Genders",
     x = "Gender",
     y = "Health Decline"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
     legend.position = "none"
   )
+#Save Graph
+ggsave("gender_health_decline.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for worr_health_dummy per Gender: Histogram
 ggplot(main_unique, aes(x = factor(male), y = worr_health_dummy, fill = factor(male))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_manual(values = c("pink", "blue"), labels = c("Female", "Male"), name = "Gender") +
-  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and define outliers
+  scale_fill_manual(values = c("#FF0000", "#163E64"), labels = c("Female", "Male"), name = "Gender") +  # Custom fill colors
+  scale_x_discrete(labels = c("0" = "Female", "1" = "Male")) +  # Update x-axis labels
   labs(
     title = "Health Worries by Gender",
+    subtitle = "Boxplot of Health Worries for Females and Males",
     x = "Gender",
     y = "Health Worries"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid lines
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "none" # Remove legend
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "None"
   )
 
 
+#Save Graph
+ggsave("gender_worr_health.png", plot = last_plot(), dpi = 300)
+
 # Graph for health_satisfaction per Gender: Density plot
 ggplot(main_unique, aes(x = health_satisfaction, fill = factor(male), color = factor(male))) +
-  geom_density(alpha = 0.5) + # Add transparency for overlapping areas
-  scale_fill_manual(values = c("red", "blue"), labels = c("Female", "Male")) +
-  scale_color_manual(values = c("red", "blue"), labels = c("Female", "Male")) +
+  geom_density(alpha = 0.5, size = 1) +  # Add transparency and adjust line thickness
+  scale_fill_manual(values = c("#FF0000", "#163E64"), labels = c("Female", "Male"), name = "Gender") +  # Custom fill colors
+  scale_color_manual(values = c("#FF0000", "#163E64"), labels = c("Female", "Male"), name = "Gender") +  # Custom line colors
   labs(
     title = "Density of Health Satisfaction by Gender",
+    subtitle = "Density Plot Comparing Female and Male Responses",
     x = "Health Satisfaction",
     y = "Density",
     fill = "Gender",
@@ -1426,10 +1519,32 @@ ggplot(main_unique, aes(x = health_satisfaction, fill = factor(male), color = fa
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"
   )
+#Save Graph
+ggsave("gender_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
 We notice that gender differences are insignificant on health variables. We, therefore, do not expect gender to be a strong predictor.
@@ -1451,7 +1566,7 @@ main_educ <- main %>%
   )
 # Count of individuals per Educ
 ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), fill = factor(educ))) +
-  geom_bar(alpha = 0.7) +
+  geom_bar(alpha = 0.7, color = "black") +
   scale_x_discrete(
     labels = c(
       "1" = "Primary",
@@ -1465,24 +1580,46 @@ ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), fill = factor(educ
     ),
     limits = c("1", "2", "3", "4", "5", "6", "7", "8") # Exclude 0 explicitly
   ) +
-  scale_fill_brewer(palette = "Paired", guide = "none") +
+  scale_fill_brewer(palette = "RdBu") +  
   labs(
     title = "Distribution of Individuals by Educational Level",
     x = "Educational Level",
-    y = "Count"
+    y = "Count",
+    fill = "Educational Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"
   )
 
+#Save Graph
+ggsave("educ.png", plot = last_plot(), dpi = 300)
 
 # Health  per Educ: 
 ggplot(main_educ %>% filter(educ != 0), aes(x = health, fill = factor(educ))) +
-  geom_density(alpha = 0.7) +
+  geom_density(alpha = 0.7, color = "black") +
   facet_wrap(~ factor(educ), ncol = 2, labeller = as_labeller(c(
     "1" = "Primary",
     "2" = "Lower Secondary",
@@ -1493,22 +1630,45 @@ ggplot(main_educ %>% filter(educ != 0), aes(x = health, fill = factor(educ))) +
     "7" = "Master's",
     "8" = "Doctoral"
   ))) +
-  scale_fill_brewer(palette = "Paired", guide = "none") +
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  # Use diverging red/blue palette
   labs(
     title = "Density of Health by Educational Level",
     x = "Health",
-    y = "Density"
+    y = "Density",
+    fill = "Educational Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_blank(),  # Dark blue y-axis labels
+
+    # Facet title styling
+    strip.text = element_text(size = 12, face = "bold", color = "#1E2B4F", margin = ggplot2::margin(b = 5)),  # Style facet labels
+    
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
   )
+
+#Save Graph
+ggsave("educ_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_decline_2yrs per educ: 
 ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_decline_2yrs, fill = factor(educ))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black border
   scale_x_discrete(
     labels = c(
       "1" = "Primary",
@@ -1521,23 +1681,47 @@ ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_decline
       "8" = "Doctoral"
     )
   ) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  # Use Blues palette
   labs(
     title = "Health Decline in 2 Years by Educational Level",
+    subtitle = "Boxplot of Health Decline Across Education Levels",
     x = "Educational Level",
-    y = "Health Decline"
+    y = "Health Decline",
+    fill = "Educational Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+
+#Save Graph
+ggsave("educ_health_decline.png", plot = last_plot(), dpi = 300)
 
 # Graph for worr_health_dummy per educ:
 ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = worr_health_dummy, fill = factor(educ))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black borders
   scale_x_discrete(
     labels = c(
       "1" = "Primary",
@@ -1550,25 +1734,48 @@ ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = worr_health_du
       "8" = "Doctoral"
     )
   ) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  # Use Blues palette
   labs(
     title = "Health Worries by Educational Level",
+    subtitle = "Boxplot of Health Worries Across Education Levels",
     x = "Educational Level",
-    y = "Health Worries"
+    y = "Health Worries",
+    fill = "Educational Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
 
+#Save Graph
+ggsave("educ_worr_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_satisfaction per educ: 
 ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_satisfaction, fill = factor(educ))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black border
   scale_x_discrete(
     labels = c(
       "1" = "Primary",
@@ -1581,19 +1788,42 @@ ggplot(main_educ %>% filter(educ != 0), aes(x = factor(educ), y = health_satisfa
       "8" = "Doctoral"
     )
   ) +
-  scale_fill_brewer(palette = "Paired", guide = "none") + # Hide legend
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  
   labs(
     title = "Health Satisfaction by Educational Level",
+    subtitle = "Boxplot of Health Satisfaction Across Education Levels",
     x = "Educational Level",
-    y = "Health Satisfaction"
+    y = "Health Satisfaction",
+    fill = "Educational Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+#Save Graph
+ggsave("educ_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 
 ```
@@ -1615,18 +1845,37 @@ cleaned_main <- main %>%
 
 # Distribution of income variable
 ggplot(cleaned_main, aes(x = net_income)) +
-  geom_histogram(binwidth = 500, fill = "blue", color = "black", alpha = 0.7) +
+  geom_histogram(binwidth = 500, fill = "#163E64", color = "black", alpha = 0.7) +  # Use dark blue fill and black borders
   labs(
     title = "Histogram of Net Income Distribution",
+    subtitle = "Distribution of Net Income Across Individuals",
     x = "Net Income",
     y = "Count"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space on the right and top/bottom
   )
+ggsave("income.png", plot = last_plot(), dpi = 300)
 
 # Group data by pid and educ, and summarize
 income_data <- main %>%
@@ -1642,8 +1891,15 @@ income_data <- main %>%
 
 # Health  per Income: 
 ggplot(income_data, aes(x = net_income, y = health)) +
-  stat_summary_bin(fun = "mean", bins = 30, geom = "point", color = "blue", size = 2) +
-  geom_smooth(method = "loess", color = "red", se = FALSE) +
+    geom_smooth(
+    aes(group = 1),  # Ensure a single LOESS line for all bins
+    method = "loess",
+    color = "#F00000",  # Red for LOESS line
+    size = 1.2,  
+    se = FALSE, # No confidence interval shading
+    span = 1 
+  ) +
+  stat_summary_bin(fun = "mean", bins = 30, geom = "point", color = "#163E64", size = 2) +  
   labs(
     title = "Health vs. Income (Binned Scatter Plot)",
     x = "Net Income",
@@ -1651,11 +1907,28 @@ ggplot(income_data, aes(x = net_income, y = health)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space on the right and top/bottom
   )
 
+ggsave("income_health.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for health_decline_2yrs per income: 
@@ -1683,8 +1956,8 @@ income_data <- income_data %>%
   )
 
 ggplot(income_data, aes(x = net_income_bin, y = health_decline_2yrs, fill = net_income_bin)) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black border
+  scale_fill_brewer(palette = "RdBu", guide = "none") + 
   labs(
     title = "Health Decline by Income (Binned)",
     x = "Net Income (Binned)",
@@ -1692,32 +1965,37 @@ ggplot(income_data, aes(x = net_income_bin, y = health_decline_2yrs, fill = net_
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+ggsave("income_health_decline.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for worr_health_dummy per income:
 ggplot(income_data, aes(x = worr_health_dummy, fill = net_income_bin)) +
-  geom_density(alpha = 0.5) +
-  scale_fill_manual(
-    values = c(
-      "#E41A1C", # Red
-      "#377EB8", # Blue
-      "#4DAF4A", # Green
-      "#984EA3", # Purple
-      "#FF7F00", # Orange
-      "#FFFF33", # Yellow
-      "#A65628", # Brown
-      "#F781BF", # Pink
-      "#999999", # Gray
-      "#66C2A5"  # Teal
-    ),
-    name = "Net Income (Binned)"
-  ) +
+  geom_density(alpha = 0.5, color = "black", size = 0.5) +  # Add transparency and black outline
+  scale_fill_brewer(palette = "RdBu", name = "Net Income (Binned)") +
   labs(
     title = "Density of Health Worries by Income",
     x = "Health Worries",
@@ -1725,11 +2003,33 @@ ggplot(income_data, aes(x = worr_health_dummy, fill = net_income_bin)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid lines
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "right",  # Move legend to the top
+    legend.text = element_text(size = 10, color = "#1E2B4F"),  # Dark blue legend text
+    legend.title = element_text(size = 12, face = "bold", color = "#1E2B4F")  # Bold and dark blue legend title
   )
 
+ggsave("income_worr_health.png", plot = last_plot(), dpi = 300)
 
 # Group data by income bins and calculate average health satisfaction
 heatmap_data <- income_data %>%
@@ -1754,21 +2054,47 @@ heatmap_data <- income_data %>%
 
 # Create the heatmap
 ggplot(heatmap_data, aes(x = net_income_bin, y = 1, fill = avg_health_satisfaction)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "lightblue", high = "blue", name = "Avg Satisfaction") +
+  geom_tile(color = "white") +  # Add white borders for separation
+  scale_fill_gradient2(
+    low = "#67001F",  # Deep Red
+    mid = "#F7F7F7",  # Neutral White
+    high = "#053061", # Deep Blue
+    midpoint = mean(heatmap_data$avg_health_satisfaction, na.rm = TRUE)  # Center the gradient around the mean
+  ) +
   labs(
     title = "Average Health Satisfaction by Income Group",
     x = "Net Income (Binned)",
-    y = "",
-    fill = "Avg Health Satisfaction"
+    y = "Health Satisfaction",
+    fill = ""
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_blank(),  # Remove y-axis labels (since it’s a single-row heatmap)
+    axis.ticks.y = element_blank(),  # Remove y-axis ticks
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"), 
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 70, b = 20, l = 50),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "right",  # Move legend to the top
   )
 
+ggsave("income_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
 Most of the participants in this dataset have  a net income lower than 5000 euros and we see that for those, the higher the income, the higher the average health as we have a positively sloped line. However, for people with higher than 5000 euros income, we see a high variance, with some outliers therefore the negative trend cannot be confirmed.
@@ -1791,19 +2117,39 @@ ggplot(main, aes(x = factor(educ), y = net_income, fill = factor(educ))) +
       "8" = "Doctoral"
     )
   ) +
-  scale_fill_brewer(palette = "Blues", guide = "none") + # Use a blue color palette
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  
   labs(
     title = "Net Income by Education Level",
     x = "Education Level",
-    y = "Net Income"
+    y = "Net Income",
+    fill = "Education Level"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid lines
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space on the right and top/bottom
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+ggsave("income_educ.png", plot = last_plot(), dpi = 300)
 ```
 There is not a significant relationship between education level and net income. 
 
@@ -1812,8 +2158,8 @@ There is not a significant relationship between education level and net income.
 ```{r}
 # Distribution of age variable
 ggplot(main, aes(x = age)) +
-  geom_histogram(aes(y = ..density..), binwidth = 5, fill = "lightblue", color = "black", alpha = 0.7) +
-  geom_density(color = "blue", size = 1) +
+  geom_histogram(aes(y = ..density..), binwidth = 5, fill = "#A6CEE3", color = "black", alpha = 0.7) + 
+  geom_density(color = "#1E2B4F", size = 1) + 
   labs(
     title = "Combined Histogram and Density Plot of Age Distribution",
     x = "Age",
@@ -1821,30 +2167,83 @@ ggplot(main, aes(x = age)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space around the plot
   )
 
+ggsave("age.png", plot = last_plot(), dpi = 300)
 
 # Health  per age: 
+# Filter and create age groups
 age_data <- main %>%
-  filter(!is.na(age)) %>% # Remove NA values in the age column
+  filter(!is.na(age)) %>%  # Remove NA values in the age column
   mutate(
     age_group = cut(
       age,
-      breaks = c(25, 30, 35, 40, 45, 50, 55), # Define the breaks explicitly
-      include.lowest = TRUE, # Ensures 25 is included in the first group
-      right = TRUE, # Ensures 55 is included in the last group
-      labels = c("[25-30)", "[30-35)", "[35-40)", "[40-45)", "[45-50)", "[50-55]") # Labels with brackets
+      breaks = c(25, 30, 35, 40, 45, 50, 55),  # Define the breaks explicitly
+      include.lowest = TRUE,  # Ensures 25 is included in the first group
+      right = TRUE,  # Ensures 55 is included in the last group
+      labels = c("[25-30)", "[30-35)", "[35-40)", "[40-45)", "[45-50)", "[50-55]")  # Labels with brackets
     )
   )
+
+ggplot(age_data, aes(x = age_group, fill = age_group)) +
+  geom_bar(alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "Blues", guide = "none") +  # Use a blue color palette
+  labs(
+    title = "Age Group Distribution",
+    x = "Age Group",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
+  )
+ggsave("age2.png", plot = last_plot(), dpi = 300)
 
 
 # Create violin plot for health by 5-year age groups
 ggplot(age_data, aes(x = age_group, y = health, fill = age_group)) +
-  geom_violin(trim = FALSE, alpha = 0.7) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "black") +  # Add transparency and black border
+  scale_fill_brewer(palette = "Blues", guide = "none") +  # Use a blue color palette
   labs(
     title = "Distribution of Health by 5-Year Age Groups",
     x = "Age Group",
@@ -1852,40 +2251,84 @@ ggplot(age_data, aes(x = age_group, y = health, fill = age_group)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+ggsave("age_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_decline_2yrs per age: 
 ggplot(age_data, aes(x = age_group, fill = factor(health_decline_2yrs))) +
-  geom_bar(position = "fill", alpha = 0.7) +
+  geom_bar(position = "fill", alpha = 0.7, color = "black") +  # Add transparency and black borders
   scale_fill_manual(
-    values = c("lightblue", "blue"),
-    labels = c("No Decline", "Decline")
+    values = c("#A6CEE3", "#1E2B4F"),  # Light blue and dark blue
+    labels = c("No Decline", "Decline"),
+    name = "Health Decline"
   ) +
   labs(
     title = "Proportion of Health Decline by Age Group",
+    subtitle = "Stacked Bar Chart Showing Health Decline Across Age Groups",
     x = "Age Group",
     y = "Proportion",
     fill = "Health Decline"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "top",  # Move legend to the top
+    legend.text = element_text(size = 12, color = "#1E2B4F"),  # Dark blue legend text
+    legend.title = element_text(size = 14, face = "bold", color = "#1E2B4F")  # Bold and dark blue legend title
   )
+ggsave("age_health_decline.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for worr_health_dummy per age:
 ggplot(age_data, aes(x = age_group, fill = factor(worr_health_dummy))) +
-  geom_bar(position = "fill", alpha = 0.7) +
+  geom_bar(position = "fill", alpha = 0.7, color = "black") +  # Add transparency and black borders
   scale_fill_manual(
-    values = c("lightblue", "blue"),
-    labels = c("No Worries", "Worries")
+    values = c("#A6CEE3", "#1E2B4F"),  # Light blue and dark blue
+    labels = c("No Worries", "Worries"),
+    name = "Health Worry"
   ) +
   labs(
     title = "Proportion of Health Worries by Age Group",
@@ -1895,17 +2338,38 @@ ggplot(age_data, aes(x = age_group, fill = factor(worr_health_dummy))) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "top",  # Move legend to the top
+    legend.text = element_text(size = 12, color = "#1E2B4F"),  # Dark blue legend text
+    legend.title = element_text(size = 14, face = "bold", color = "#1E2B4F")  # Bold and dark blue legend title
   )
 
+ggsave("age_worr_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_satisfaction per age: 
 ggplot(age_data, aes(x = age_group, y = health_satisfaction, fill = age_group)) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black border
+  scale_fill_brewer(palette = "Blues", guide = "none") +  # Use a blue color palette
   labs(
     title = "Health Satisfaction by Age Group",
     x = "Age Group",
@@ -1913,11 +2377,30 @@ ggplot(age_data, aes(x = age_group, y = health_satisfaction, fill = age_group)) 
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+ggsave("age_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
 In our dataset, the most participants we have are around the age of 45. For all health variables, we notice the same trend: the positive subjective health perceptions are higher within younger individuals, health worries increases with age, and health satisfaction decreases with age. We also notice that health decline is stable accross all age groups at around 24%. Because we expect older individuals to have a higher income, we should look into the intersection of age and income and their impact on health. 
@@ -1925,8 +2408,8 @@ In our dataset, the most participants we have are around the age of 45. For all 
 # Scatter Plot of Net Income vs. Age
 ```{r}
 ggplot(main, aes(x = age, y = net_income)) +
-  geom_point(alpha = 0.6, color = "#4BADA9") + # Semi-transparent points
-  geom_smooth(method = "loess", color = "red", se = TRUE) + # Add a LOESS trend line
+  geom_point(alpha = 0.6, color = "#1E2B4F") +  # Semi-transparent points with teal color
+  geom_smooth(method = "loess", color = "#F00000", se = TRUE, size = 1.2) +  # Add a red LOESS trend line
   labs(
     title = "Net Income vs. Age",
     x = "Age",
@@ -1934,10 +2417,28 @@ ggplot(main, aes(x = age, y = net_income)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid lines
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space around the plot
   )
+
+ggsave("income_age.png", plot = last_plot(), dpi = 300)
 ```
 # Net income does increase with age but not significantly. 
 
@@ -1956,8 +2457,8 @@ main_rel <- main %>%
   )
 # Distribution of rel_status variable
 ggplot(main_rel, aes(x = factor(rel_status), fill = factor(rel_status))) +
-  geom_bar(alpha = 0.7) +
-  scale_fill_brewer(palette = "Set2", guide = "none") +
+  geom_bar(alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  
   labs(
     title = "Distribution of Relationship Status",
     x = "Relationship Status",
@@ -1965,16 +2466,37 @@ ggplot(main_rel, aes(x = factor(rel_status), fill = factor(rel_status))) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+ggsave("rel_status.png", plot = last_plot(), dpi = 300)
+
 # Health  per rel_status: 
+
 ggplot(main_rel, aes(x = factor(rel_status), y = health, fill = factor(rel_status))) +
-  geom_bar(stat = "summary", fun = "mean", alpha = 0.7) +
-  scale_fill_brewer(palette = "Set2", guide = "none") +
+  geom_bar(stat = "summary", fun = "mean", alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  
   labs(
     title = "Average Health by Relationship Status",
     x = "Relationship Status",
@@ -1982,18 +2504,37 @@ ggplot(main_rel, aes(x = factor(rel_status), y = health, fill = factor(rel_statu
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
 
+ggsave("rel_status_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_decline_2yrs per rel_status: 
 ggplot(main_rel, aes(x = factor(rel_status), y = health_decline_2yrs, fill = factor(rel_status))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black border
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  
   labs(
     title = "Health Decline by Relationship Status",
     x = "Relationship Status",
@@ -2001,19 +2542,38 @@ ggplot(main_rel, aes(x = factor(rel_status), y = health_decline_2yrs, fill = fac
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+
+ggsave("rel_status_health_decline.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for worr_health_dummy per rel_status:
 ggplot(main_rel, aes(x = factor(rel_status), y = worr_health_dummy, fill = factor(rel_status))) +
-  geom_bar(stat = "summary", fun = "mean", alpha = 0.7) +
-  geom_text(stat = "summary", fun = "mean", aes(label = round(after_stat(y), 2)), vjust = -0.5) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_bar(stat = "summary", fun = "mean", alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette ="RdBu", guide = "none") + 
   labs(
     title = "Average Health Worries by Relationship Status",
     x = "Relationship Status",
@@ -2021,16 +2581,37 @@ ggplot(main_rel, aes(x = factor(rel_status), y = worr_health_dummy, fill = facto
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 50, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+
+
+ggsave("rel_status_worr_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_satisfaction per rel_status: 
 ggplot(main_rel, aes(x = factor(rel_status), y = health_satisfaction, fill = factor(rel_status))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_brewer(palette = "Set2", guide = "none") +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "Set2", guide = "none") +  # Use the Set2 palette for soft colors
   labs(
     title = "Health Satisfaction by Relationship Status",
     x = "Relationship Status",
@@ -2038,12 +2619,31 @@ ggplot(main_rel, aes(x = factor(rel_status), y = health_satisfaction, fill = fac
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+ggsave("rel_status_health_satisfaction.png", plot = last_plot(), dpi = 300)
 ```
 Our dataset contains mostly married individuals, which makes sense as our main population is around the age of 45. Average health is quite consistent across all relationship statuses, as well as health decline and health satisfaction. It is different for separated individuals and those with spouses abroad but the low number of these observations causing high variance does not allow us to make conclusions. 
 
@@ -2062,7 +2662,7 @@ ggplot(main, aes(x = factor(rel_status), y = age, fill = factor(rel_status))) +
       "4" = "Widowed"
     )
   ) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  # Use the RdBu palette
   labs(
     title = "Age by Relationship Status",
     x = "Relationship Status",
@@ -2070,11 +2670,32 @@ ggplot(main, aes(x = factor(rel_status), y = age, fill = factor(rel_status))) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid lines
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+
+ggsave("rel_status_age.png", plot = last_plot(), dpi = 300)
+
 ```
 
 As expected, the single group is younger but this is not significant as the variance is quite high.
@@ -2094,116 +2715,229 @@ main_germborn <- main %>%
   )
 # Distribution of germborn variable
 ggplot(main_germborn, aes(x = factor(germborn), fill = factor(germborn))) +
-  geom_bar(alpha = 0.7) +
+  geom_bar(alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_x_discrete(
+    labels = c(
+      "0" = "Born outside Germany", 
+      "1" = "Born in Germany"
+    )
+  ) +
   scale_fill_manual(
-    values = c("lightblue", "blue"),
-    labels = c("Born outside Germany", "Born in Germany"),
-    name = "German-Born Status"
+    values = c("#A6CEE3", "#1E2B4F"), 
+    guide = "none"  # Remove legend
   ) +
   labs(
     title = "Distribution of German-Born Individuals",
-    x = "German-Born Status",
+    x = "Migration Status",
     y = "Count"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
-    legend.title = element_text(face = "bold"), # Bold legend title
-    legend.text = element_text(size = 12) # Adjust legend text size
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space around the plot
   )
+ggsave("germborn.png", plot = last_plot(), dpi = 300)
 
 
 # Health per germborn: 
 ggplot(main_germborn, aes(x = factor(germborn), y = health, fill = factor(germborn))) +
-  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "black") +  # Add transparency and black borders
   scale_fill_manual(
-    values = c("lightblue", "blue"),
+    values = c("#A6CEE3", "#1E2B4F"),  # Light blue and dark blue
     labels = c("Born Outside of Germany", "Born in Germany"),
     name = "German-Born Status"
   ) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "Born Outside of Germany",
+      "1" = "Born in Germany"
+    )
+  ) +
   labs(
-    title = "Distribution of Health by German-Born Status",
-    x = "German-Born Status",
+    title = "Distribution of Health by Migration Status",
+    x = "",
     y = "Health"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
-    axis.text.x = element_text(size = 12)
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+ggsave("germborn_health.png", plot = last_plot(), dpi = 300)
 
 # Graph for health_decline_2yrs per germborn: 
 ggplot(main_germborn, aes(x = factor(germborn), y = health_decline_2yrs, fill = factor(germborn))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black borders
   scale_fill_manual(
-    values = c("lightblue", "blue"),
+    values = c("#A6CEE3", "#1E2B4F"),  # Light blue and dark blue
     labels = c("Born Outside of Germany", "Born in Germany"),
-    name = "German-Born Status"
+    name = "Migration Status"
   ) +
-  scale_x_discrete(labels = c("0" = "Born outside of Germany", "1" = "Born in Germany")) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "Born Outside of Germany",
+      "1" = "Born in Germany"
+    )
+  ) +
   labs(
-    title = "Health Decline by German-Born Status",
-    x = "German-Born Status",
+    title = "Health Decline by Migration Status",
+    x = "",
     y = "Health Decline"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "none"
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F", hjust = 0.5),  # Centered and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
+ggsave("germborn_health_decline.png", plot = last_plot(), dpi = 300)
 
 # Graph for worr_health_dummy per germborn:
 ggplot(main_germborn, aes(x = worr_health_dummy, fill = factor(germborn))) +
-  geom_density(alpha = 0.5) +
+  geom_density(alpha = 0.5, color = "black") +  # Add transparency and black outline for density curves
   scale_fill_manual(
-    values = c("lightblue", "blue"),
+    values = c("#F00000", "#1E2B4F"), 
     labels = c("Born Outside of Germany", "Born in Germany"),
-    name = "German-Born Status"
+    name = "Migration Status"
   ) +
   labs(
-    title = "Density of Health Worries by German-Born Status",
+    title = "Density of Health Worries by Migration Status",
     x = "Health Worries",
     y = "Density"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "top",  # Place legend at the top
+    legend.text = element_text(size = 12, color = "#1E2B4F"),  # Dark blue legend text
+    legend.title = element_text(size = 14, face = "bold", color = "#1E2B4F")  # Bold and dark blue legend title
   )
 
+ggsave("germborn_worr_health.png", plot = last_plot(), dpi = 300)
 
 
 # Graph for health_satisfaction per germborn: 
 ggplot(main_germborn, aes(x = factor(germborn), y = health_satisfaction, fill = factor(germborn))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black borders
   scale_fill_manual(
-    values = c("lightblue", "blue"),
+    values = c("#A6CEE3", "#1E2B4F"),  # Light blue and dark blue
     labels = c("Born Outside of Germany", "Born in Germany"),
-    name = "German-Born Status"
+    name = "Migration Status"
   ) +
-  scale_x_discrete(labels = c("0" = "Born Outside of Germany", "1" = "Born in Germany")) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "Born Outside of Germany",
+      "1" = "Born in Germany"
+    )
+  ) +
   labs(
-    title = "Health Satisfaction by German-Born Status",
-    x = "German-Born Status",
+    title = "Health Satisfaction by Migration Status",
+    x = "",
     y = "Health Satisfaction"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove grid
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold"),
-    legend.position = "none"
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F", hjust = 0.5),  # Bold and centered dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+ggsave("germborn_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
 Our dataset mostly contains individuals born in Germany, which makes sense as it is the SOEP data. For people born in Germany or Outside of Germany, health distributions are quite similar. We do notice that individuals born outside of Germany have smaller health declines but also higher health worries and lower health satisfaction. The small differences, the contradictory findings, merged with the fact that we only have a small sample of individuals born outside of Germany does not allow us to make conclusion. 
@@ -2213,8 +2947,8 @@ Our dataset mostly contains individuals born in Germany, which makes sense as it
 ```{r}
 # worr_health_categorical per health_satisfaction: 
 ggplot(main, aes(x = factor(worr_health_categorical), y = health_satisfaction, fill = factor(worr_health_categorical))) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 2, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "RdBu", guide = "none") +  # Use the Blues palette for a gradient
   scale_x_discrete(
     labels = c(
       "1" = "Does Not Worry",
@@ -2229,34 +2963,80 @@ ggplot(main, aes(x = factor(worr_health_categorical), y = health_satisfaction, f
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
+ggsave("worr_health_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 
 # health_satisfaction per life_satisfaction: 
 ggplot(main, aes(x = life_satisfaction, y = health_satisfaction)) +
   geom_bin2d(bins = 30) +
-  scale_fill_gradient(low = "lightblue", high = "blue", name = "Count") +
+  scale_fill_gradient(
+    low = "#A6CEE3",  # Light blue
+    high = "#1E2B4F", # Dark blue
+    name = "Count"    # Legend title
+  ) +
   labs(
-    title = "Health Satisfaction vs. Life Satisfaction (Heatmap)",
+    title = "Health Satisfaction vs. Life Satisfaction",
     x = "Life Satisfaction",
     y = "Health Satisfaction"
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "right",  # Position legend on the right
+    legend.text = element_text(size = 12, color = "#1E2B4F"),  # Dark blue legend text
+    legend.title = element_text(size = 14, face = "bold", color = "#1E2B4F")  # Bold and dark blue legend title
   )
+
+ggsave("life_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 # health per BMI graph: 
 ggplot(main, aes(x = factor(bmi_categorical), y = health, fill = factor(bmi_categorical))) +
-  geom_violin(trim = FALSE, alpha = 0.7) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  geom_violin(trim = FALSE, alpha = 0.7, color = "black") +  # Add transparency and black borders
+  scale_fill_brewer(palette = "Blues", guide = "none") +  # Use the Blues palette
   scale_x_discrete(
     labels = c(
       "1" = "Underweight",
@@ -2272,13 +3052,32 @@ ggplot(main, aes(x = factor(bmi_categorical), y = health, fill = factor(bmi_cate
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title.x = element_text(face = "bold"),
-    axis.title.y = element_text(face = "bold")
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, face = "bold", color = "#1E2B4F"),  # Tilted and bold dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Legend styling
+    legend.position = "none"  # Remove legend
   )
 
 
+ggsave("health_bmi.png", plot = last_plot(), dpi = 300)
 
 
 
@@ -2536,7 +3335,7 @@ data_proportion <- c(`Train Data` = train_size, `Test Data` = test_size)
 waffle(data_proportion / sum(data_proportion) * 100, 
        rows = 10, # Adjust number of rows for granularity
        title = "Proportion of Data Points in Training and Test Sets",
-       colors = c("#44AA99", "#CC6677"))
+       colors = c("#1E2B4F", "#F00000"))
 
 set.seed(12345)
 
@@ -2565,8 +3364,37 @@ lasso_model <- train(
 # Display the best lambda value and model summary
 print(lasso_model$bestTune)
 # Visualize the cross-validation results
-plot(lasso_model)
+ggplot(lasso_model) +
+  labs(
+    title = "LASSO Model Cross-Validation Results",
+    subtitle = "RMSE vs. Log(Lambda) Across Cross-Validation Folds",
+    x = "Log(Lambda)",  # X-axis represents lambda values (log-scaled)
+    y = "RMSE"          # Y-axis represents cross-validated RMSE
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
 
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis labels
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis labels
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 20, b = 20, l = 20)  # Add spacing around the plot
+  )
+#Save Graph
+ggsave("lasso_plot.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
 # Model Evaluation
 # Predict on the test set
 predictions <- predict(lasso_model, newdata = testData)
@@ -2628,22 +3456,39 @@ ggplot(non_zero_coefficients, aes(x = reorder(Variable, Coefficient), y = Coeffi
     y = "Coefficient Value"
   ) +
   scale_fill_manual(
-    values = c("red", "blue"),
+    values = c("#FF0000", "#163E64"),  # Red for negative, dark blue for positive
     guide = "none"  # Remove the legend
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.title.x = element_blank(), # Remove x-axis title
-    axis.title.y = element_blank(), # Remove y-axis title
-    axis.text.x = element_text(size = 12), # Adjust x-axis text size
-    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
-    plot.title = element_text(face = "bold", size = 12, hjust = 0.5) # Center and style the title
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_blank(),  # Remove x-axis title
+    axis.title.y = element_blank(),  # Remove y-axis title
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis text
+    axis.text.y = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis text
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space on the right and top/bottom
   )
 
 
+#Save Graph
+ggsave("lasso_coefficients.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
+
 # Visualize the lasso model
 plot(lasso_model$finalModel, xvar = "lambda", label = TRUE)
+
 
 ```
 
@@ -2708,6 +3553,51 @@ print(lasso_model$bestTune)
 # Visualize the cross-validation results
 plot(lasso_model)
 
+# Extract the cross-validation results
+cv_results <- lasso_model$results
+
+# Create a ggplot visualization
+ggplot(cv_results, aes(x = log(lambda), y = ROC, color = ROC)) +
+  geom_point(size = 2, alpha = 0.8) +  # Add points for each lambda value
+  geom_line(size = 1) +  # Add a line to connect points
+  labs(
+    title = "LASSO Model Cross-Validation Results",
+    subtitle = "ROC vs. Log(Lambda) Across Cross-Validation Folds",
+    x = "Log(Lambda)",
+    y = "ROC"
+  ) +
+  scale_color_gradient(low = "#A6CEE3", high = "#1E2B4F") +  # Gradient from light blue to dark blue
+  theme_minimal(base_size = 14) +
+  theme(
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis text
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis text
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title and subtitle styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold subtitle
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20),  # Add more space around the plot
+    
+    # Remove legend
+    legend.position = "none" 
+
+  )
+
+#Save Graph
+ggsave("lasso_model_classification.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
+
 # Model Evaluation
 # Predict probabilities on the test set
 predictions <- predict(lasso_model, newdata = testData, type = "prob")
@@ -2744,16 +3634,16 @@ non_zero_coefficients <- non_zero_coefficients %>%
       Variable == "health" ~ "Health",
       Variable == "health_satisfaction" ~ "Health Satisfaction",
       Variable == "life_satisfaction" ~ "Life Satisfaction",
-      Variable == "educ" ~ "Education",
-      Variable == "male" ~ "Gender (Male)",
-      Variable == "worr_job_dummy" ~ "Job Worries",
+      Variable == "educ" ~ "Education Level",
+      Variable == "male" ~ "Gender (Male=1)",
+      Variable == "worr_job_dummy" ~ "Job Worries (Dummy)",
       Variable == "tenure" ~ "Tenure",
-      Variable == "work_time_weekly" ~ "Weekly Work Hours",
+      Variable == "work_time_weekly" ~ "Work Time Weekly",
       Variable == "net_income" ~ "Net Income",
       Variable == "total_years_unemployment" ~ "Total Years Unemployed",
-      Variable == "worr_financial_dummy" ~ "Financial Worries",
-      Variable == "smoking_dummy" ~ "Smoking",
-      Variable == "worr_health_dummy" ~ "Health Worries",
+      Variable == "worr_financial_dummy" ~ "Financial Worries (Dummy)",
+      Variable == "smoking_dummy" ~ "Smoking (Dummy)",
+      Variable == "worr_health_dummy" ~ "Worries About Health (Dummy)",
       Variable == "BMI" ~ "BMI",
       Variable == "age" ~ "Age",
       TRUE ~ Variable  # Keep any variable not explicitly renamed
@@ -2770,18 +3660,33 @@ ggplot(non_zero_coefficients, aes(x = reorder(Variable, Coefficient), y = Coeffi
     y = "Coefficient Value"
   ) +
   scale_fill_manual(
-    values = c("red", "blue"),
+    values = c("#FF0000", "#163E64"),  # Red for negative, dark blue for positive
     guide = "none"  # Remove the legend
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.title.x = element_blank(), # Remove x-axis title
-    axis.title.y = element_blank(), # Remove y-axis title
-    axis.text.x = element_text(size = 12), # Adjust x-axis text size
-    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5) # Center and style the title
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.title.x = element_blank(),  # Remove x-axis title
+    axis.title.y = element_blank(),  # Remove y-axis title
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis text
+    axis.text.y = element_text(size = 12, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis text
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space around the plot
   )
+#Save Graph
+ggsave("lasso_coefficients_classification.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
 
 ```
 
@@ -2870,9 +3775,48 @@ for(i in seq_len(nrow(tuning_grid))) { # Iterates over each row of the tuning_gr
   # Stores the RMSE of the model 
   tuning_grid$rmse[i] <- sqrt(fit$prediction.error)
 }
+
+```
+
+```{r}
 # Plot the rmse against then number of trees
 ggplot(tuning_grid, aes(trees, rmse)) + 
   geom_line()
+
+# Plot the RMSE against the number of trees with enhanced theme
+ggplot(tuning_grid, aes(x = trees, y = rmse)) + 
+  geom_line(color = "#163E64", size = 1) +  # Dark blue line
+  geom_point(color = "#1E2B4F", size = 2, alpha = 0.8) +  # Points for emphasis
+  labs(
+    title = "Random Forest Model Tuning: RMSE vs. Number of Trees",
+    x = "Number of Trees",
+    y = "RMSE"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    # Backgrounds
+    panel.background = element_rect(fill = "white", color = NA),  # White background
+    plot.background = element_rect(fill = "white", color = NA),  # White outer background
+
+    # Gridlines
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+
+    # Axis styling
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),  # Dark blue x-axis text
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),  # Dark blue y-axis text
+    axis.title.x = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue x-axis title
+    axis.title.y = element_text(size = 14, face = "bold", color = "#1E2B4F"),  # Bold and dark blue y-axis title
+
+    # Title styling
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1E2B4F", margin = ggplot2::margin(b = 10)),  # Centered and bold title
+    
+    # Adjust overall plot margins
+    plot.margin = ggplot2::margin(t = 20, r = 100, b = 20, l = 20)  # Add more space around the plot
+  )
+#Save Graph
+ggsave("rf_rmse.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
+
 ```
 
 ```{r}
@@ -2903,6 +3847,7 @@ print(rf_model)
 predictions <- predict(rf_model, newdata = testData)
 
 ```
+
 ```{r}
 # Confusion matrix to evaluate performance
 confusionMatrix(predictions, testData$health_decline_2yrs, positive = "Yes")
@@ -2935,9 +3880,9 @@ v1_table <- v1_table %>%
       Variable == "health_lag1" ~ "Health of previous year",
       Variable == "health_satisfaction" ~ "Health Satisfaction",
       Variable == "life_satisfaction" ~ "Life Satisfaction",
-      Variable == "educ" ~ "Education",
-      Variable == "male" ~ "Gender (Male)",
-      Variable == "worr_job_dummy" ~ "Job Worries",
+      Variable == "educ" ~ "Education Level",
+      Variable == "male" ~ "Gender (Male=1)",
+      Variable == "worr_job_dummy" ~ "Job Worries (Dummy)",
       Variable == "tenure" ~ "Tenure",
       Variable == "tenure_lag1" ~ "Tenure of previous year",
       Variable == "work_time_weekly" ~ "Weekly Work Hours",
@@ -2945,9 +3890,9 @@ v1_table <- v1_table %>%
       Variable == "net_income" ~ "Net Income",
       Variable == "net_income_lag1" ~ "Net Income of previous year",
       Variable == "total_years_unemployment" ~ "Total Years Unemployed",
-      Variable == "worr_financial_dummy" ~ "Financial Worries",
+      Variable == "worr_financial_dummy" ~ "Financial Worries (Dummy)",
       Variable == "smoking_dummy" ~ "Smoking",
-      Variable == "worr_health_dummy" ~ "Health Worries",
+      Variable == "worr_health_dummy" ~ "Health Worries (Dummy)",
       Variable == "BMI" ~ "BMI",
       Variable == "age" ~ "Age",
       TRUE ~ Variable  # Keep any variable not explicitly renamed
@@ -2956,7 +3901,7 @@ v1_table <- v1_table %>%
 
 # Create the bar plot
 ggplot(v1_table, aes(x = reorder(Variable, Importance), y = Importance)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "#4BADA9", color = "black") +
+  geom_bar(stat = "identity", position = "dodge", fill = "#1E2B4F", color = "black") +
   coord_flip() +  # Flip coordinates for better readability
   labs(
     title = "Variable Importance from Random Forest",
@@ -2965,12 +3910,19 @@ ggplot(v1_table, aes(x = reorder(Variable, Importance), y = Importance)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    panel.grid = element_blank(), # Remove background grid
-    axis.text.x = element_text(size = 12), # Adjust x-axis text size
-    axis.text.y = element_text(size = 12, face = "bold"), # Make y-axis labels bold
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5), # Style and center the title
+    panel.background = element_rect(fill = "white", color = NA), # Dark blue background
+    plot.background = element_rect(fill = "white", color = NA), # Dark blue outer background
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"), 
+    axis.text.y = element_text(size = 12, face = "bold", color = "#1E2B4F"), 
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.25, color = "#1E2B4F"), # Shift title left and color 
+    plot.caption = element_text(color = "#1E2B4F"), 
+    axis.title = element_text(color = "#1E2B4F"), 
     legend.position = "none"  # Remove the legend
   )
+#Save Graph
+ggsave("rf_importance.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
 
 ```
 ## Partial Dependence
