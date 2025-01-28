@@ -15,4 +15,7 @@
 "Economic Worries (Dummy)",0.8,0.4,0,1,43936
 "Gender (Male = 1)",0.5,0.5,0,1,43936
 "Age",39.9,8.1,25,55,43936
-"Education Level",4.2,1.6,0,8,43936
+"University (Dummy)",0.3,0.5,0,1,43936
+"Married (Dummy)",0.6,0.5,0,1,43936
+"White Collar Job (Dummy)",0.5,0.5,0,1,43936
+"Self Employed (Dummy)",0.1,0.3,0,1,43936

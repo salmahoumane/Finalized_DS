@@ -23,7 +23,7 @@ This report documents the steps taken to preprocess and analyze the SOEP data fo
 
 ```{r}
 # Load required packages
-my_packages <- c("tidyverse", "haven", "openxlsx", "labelled", "dplyr", "lubridate","ggplot2","skimr","ggcorrplot","patchwork","ggridges", "glmnet", "plm", "magrittr", "caret","waffle","randomForest","rpart","ranger","vip","pdp","rpart.plot")
+my_packages <- c("tidyverse", "haven", "openxlsx", "labelled", "dplyr", "lubridate","ggplot2","skimr","ggcorrplot","patchwork","ggridges", "glmnet", "plm", "magrittr", "caret","waffle","randomForest","rpart","ranger","vip","pdp","rpart.plot","fastDummies")
 
 for (p in my_packages) {
   if (!require(p, character.only = TRUE)) {
@@ -3088,6 +3088,49 @@ Similarly, the higher life satisfaction, the higher health satisfaction as we ob
 
 Analyzing BMI, we also see that normal and overweight individuals show higher health. However, due to the low amount of observations of underweight and obese individuals, we cannot make conclusions.
 
+# Create new dummys
+
+```{r}
+# Create university_dummy (university-level education: educ = 6, 7, 8)
+main <- main %>%
+  mutate(university_dummy = ifelse(educ %in% c(6, 7, 8), 1, 0))
+
+# Create married_dummy (married status: rel_status = "married")
+main <- main %>%
+  mutate(married_dummy = ifelse(rel_status == "married", 1, 0))
+
+# Create white_collar_dummy and self_employed_dummy from occupational_status
+main <- main %>%
+  mutate(
+    white_collar_dummy = ifelse(occup_status == "White Collar Employee", 1, 0),
+    self_employed_dummy = ifelse(occup_status %in% c("White Collar - Self-Employed", "Agriculture - Self-Employed"), 1, 0)
+  )
+```
+
+#Visualise new dummies
+
+```{r}
+# Select the dummy variables to visualize
+dummy_data <- main %>%
+  select(university_dummy, married_dummy, white_collar_dummy, self_employed_dummy) %>%
+  pivot_longer(cols = everything(), names_to = "DummyVariable", values_to = "Value") %>%
+  group_by(DummyVariable, Value) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Create a bar plot for the distribution of each dummy variable
+ggplot(dummy_data, aes(x = as.factor(Value), y = Count, fill = as.factor(Value))) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ DummyVariable, scales = "free_y") +
+  labs(
+    title = "Distribution of Dummy Variables",
+    x = "Dummy Value (0 = No, 1 = Yes)",
+    y = "Count",
+    fill = "Value"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
 # Detailed Summary Statistics Tables
 
 ```{r}
@@ -3139,8 +3182,10 @@ variables <- list(
   list(name = "worr_economic_dummy", label = "Economic Worries (Dummy)"),
   list(name = "male", label = "Gender (Male = 1)"),
   list(name = "age", label = "Age"),
-  list(name = "educ", label = "Education Level")
-  
+  list(name = "university_dummy", label = "University (Dummy)"),
+  list(name = "married_dummy", label = "Married (Dummy)"),
+  list(name = "white_collar_dummy", label = "White Collar Job (Dummy)"),
+  list(name = "self_employed_dummy", label = "Self Employed (Dummy)")
 )
 
 # Initialize a list to store tables for each group
@@ -3227,14 +3272,15 @@ list(name = "BMI", label = "BMI"),
   list(name = "net_income", label = "Net Income"),
   list(name = "work_time_weekly", label = "Work Time Weekly"),
   list(name = "total_years_unemployment", label = "Total Years Unemployment"),
-  list(name = "employment", label = "Employment Status (Employed = 1)"),
   list(name = "worr_job_dummy", label = "Job Worries (Dummy)"),
   list(name = "worr_financial_dummy", label = "Financial Worries (Dummy)"),
   list(name = "worr_economic_dummy", label = "Economic Worries (Dummy)"),
   list(name = "male", label = "Gender (Male = 1)"),
   list(name = "age", label = "Age"),
-  list(name = "educ", label = "Education Level"),
-  list(name = "university", label = "University Degree (Dummy)")
+  list(name = "university_dummy", label = "University (Dummy)"),
+  list(name = "married_dummy", label = "Married (Dummy)"),
+  list(name = "white_collar_dummy", label = "White Collar Job (Dummy)"),
+  list(name = "self_employed_dummy", label = "Self Employed (Dummy)")
 )
 
 # Create a summary table
@@ -3268,7 +3314,7 @@ The table provides descriptive statistics for individuals categorized by their s
 - Worries about finances and the economy increase slightly as health worsens.
 - Individuals in Good health have significantly higher incomes (Good: €1574 → Poor: €1060).
 - Poor health correlates with increasing age (Good: 39.8 → Poor: 43.3).
-- Education level decreases with poorer health (Good: 4.2 → Poor: 3.6). Lower education might contribute to worse health outcomes.
+- People who do go to University have slightly better health (Good: 0.3 → Poor: 0.2). Lower education might contribute to worse health outcomes.
 - Surprisingly, those in poorer health report less expected decline (Good: 0.3 → Poor: 0.1). This could indicate resignation or lower health awareness.
 
 But, in general, in our dataset, ,ost individuals report Good health (45,372), with fewer in Moderate health (21,859) and the least in Poor health (9,276). This indicates a skewed distribution towards better health.
@@ -3288,7 +3334,7 @@ lasso_data <- panel_data %>%
     pid, syear, health_decline_2yrs, health_in_2yrs, worr_health_dummy, health, BMI, smoking_dummy, life_satisfaction, health_satisfaction,
     tenure, net_income, work_time_weekly, total_years_unemployment, 
     worr_job_dummy, worr_financial_dummy, worr_economic_dummy,
-    male, age, educ
+    male, age, university_dummy, married_dummy, white_collar_dummy, self_employed_dummy
   ) %>%
   na.omit()  # Remove missing values
 
@@ -3312,7 +3358,7 @@ numerical_vars <- c(
   "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
   "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
   "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
-  "male", "age", "educ", "worr_health_dummy", "health"
+  "male", "age", "worr_health_dummy", "health", "married_dummy","university_dummy","self_employed_dummy","white_collar_dummy"
 )
 
 # Apply pre-processing (center and scale) only to the selected numerical columns
@@ -3426,7 +3472,7 @@ non_zero_coefficients <- data.frame(
 non_zero_coefficients <- non_zero_coefficients %>%
   filter(Variable != "(Intercept)") %>%  # Remove the intercept
   mutate(
-    Variable = case_when(  # Rename variables for cleaner labels
+    Variable = case_when(  
       Variable == "health" ~ "Health",
       Variable == "health_satisfaction" ~ "Health Satisfaction",
       Variable == "life_satisfaction" ~ "Life Satisfaction",
@@ -3442,7 +3488,11 @@ non_zero_coefficients <- non_zero_coefficients %>%
       Variable == "worr_health_dummy" ~ "Health Worries",
       Variable == "BMI" ~ "BMI",
       Variable == "age" ~ "Age",
-      TRUE ~ Variable  # Keep any variable not explicitly renamed
+      Variable == "university_dummy" ~ "University (Dummy)",
+      Variable == "married_dummy" ~ "Married (Dummy)",
+      Variable == "white_collar_dummy" ~ "White Collar Job (Dummy)",
+      Variable == "self_employed_dummy" ~ "Self Employed (Dummy)",
+      TRUE ~ Variable 
     )
   )
 
@@ -3513,7 +3563,7 @@ numerical_vars <- c(
   "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
   "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
   "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
-  "male", "age", "educ", "worr_health_dummy", "health"
+  "male", "age",  "worr_health_dummy", "health", "married_dummy","university_dummy","self_employed_dummy","white_collar_dummy"
 )
 
 # Apply pre-processing (center and scale) only to the selected numerical columns
@@ -3644,9 +3694,14 @@ non_zero_coefficients <- non_zero_coefficients %>%
       Variable == "worr_financial_dummy" ~ "Financial Worries (Dummy)",
       Variable == "smoking_dummy" ~ "Smoking (Dummy)",
       Variable == "worr_health_dummy" ~ "Worries About Health (Dummy)",
+      Variable == "worr_economic_dummy" ~ "Worries About the Economy (Dummy)",
       Variable == "BMI" ~ "BMI",
       Variable == "age" ~ "Age",
-      TRUE ~ Variable  # Keep any variable not explicitly renamed
+      Variable == "university_dummy" ~ "University (Dummy)",
+      Variable == "married_dummy" ~ "Married (Dummy)",
+      Variable == "white_collar_dummy" ~ "White Collar Job (Dummy)",
+      Variable == "self_employed_dummy" ~ "Self Employed (Dummy)",
+      TRUE ~ Variable 
     )
   )
 
@@ -3693,30 +3748,28 @@ ggsave("lasso_coefficients_classification.png", plot = last_plot(), width = 16, 
 ## Random Forest Classification
 
 ```{r}
-# Create time-lagged variables
-panel_data <- panel_data %>%
-  group_by(pid) %>%
-  arrange(syear) %>%
-  mutate(
-    health_lag1 = lag(health, 1),  # Previous year's health
-    net_income_lag1 = lag(net_income, 1),  # Previous income
-    work_time_weekly_lag1 = lag(work_time_weekly, 1),
-    tenure_lag1 = lag(tenure, 1)
-  ) %>%
-  ungroup()
+set.seed(12345)
+# Convert data to panel format
+panel_data <- pdata.frame(main, index = c("pid", "syear"))  # pid = individual ID, syear = time
 
 # Define relevant numerical variables as a character vector
 numerical_vars <- c(
   "BMI", "smoking_dummy", "life_satisfaction", "health_satisfaction",
   "tenure", "net_income", "work_time_weekly", "total_years_unemployment",
   "worr_job_dummy", "worr_financial_dummy", "worr_economic_dummy",
-  "male", "age", "educ", "worr_health_dummy", "health","health_lag1","net_income_lag1",
-  "work_time_weekly_lag1","tenure_lag1"
+  "male", "age",  "worr_health_dummy", "health", "married_dummy","university_dummy","self_employed_dummy","white_collar_dummy"
 )
 
 # Create rf_data by removing specific columns
 rf_data <- panel_data %>%
-  dplyr::select(-pid, -syear, -health_in_2yrs)
+  dplyr::select(
+     health_decline_2yrs, worr_health_dummy, health, BMI, smoking_dummy, life_satisfaction, health_satisfaction,
+    tenure, net_income, work_time_weekly, total_years_unemployment, 
+    worr_job_dummy, worr_financial_dummy, worr_economic_dummy,
+    male, age, university_dummy, married_dummy, white_collar_dummy, self_employed_dummy
+  ) %>%
+  na.omit()  # Remove missing values
+
 
 # Ensure health_decline_2yrs Is a Factor
 rf_data$health_decline_2yrs <- factor(rf_data$health_decline_2yrs, levels = c(0, 1), labels = c("No", "Yes"))
@@ -3745,9 +3798,10 @@ rpart.plot(class_tree, main = "Decision Tree: Classification", type = 5)
 
 # Building the classification model
 
-set.seed(123) # For reproducibility
 # Create a training and test dataset
 trainIndex <- createDataPartition (rf_data$health_decline_2yrs, p = 0.7, list = FALSE)
+# Convert trainIndex to a vector
+trainIndex <- as.vector(trainIndex)
 trainData <- rf_data[trainIndex, ]
 testData <- rf_data[-trainIndex, ]
 dim(trainData)
@@ -3830,7 +3884,7 @@ tune_grid <- expand.grid(
 )
 
 # Train the Random Forest model using ranger in caret
-set.seed(123) # Set seed for reproducibility 
+set.seed(12345) # Set seed for reproducibility 
 rf_model <- train(
   class_tree_formula, 
   data = trainData, 
@@ -3895,7 +3949,11 @@ v1_table <- v1_table %>%
       Variable == "worr_health_dummy" ~ "Health Worries (Dummy)",
       Variable == "BMI" ~ "BMI",
       Variable == "age" ~ "Age",
-      TRUE ~ Variable  # Keep any variable not explicitly renamed
+      Variable == "university_dummy" ~ "University (Dummy)",
+      Variable == "married_dummy" ~ "Married (Dummy)",
+      Variable == "white_collar_dummy" ~ "White Collar Job (Dummy)",
+      Variable == "self_employed_dummy" ~ "Self Employed (Dummy)",
+      TRUE ~ Variable 
     )
   )
 
