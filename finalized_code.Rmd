@@ -3102,7 +3102,7 @@ main <- main %>%
 # Create white_collar_dummy and self_employed_dummy from occupational_status
 main <- main %>%
   mutate(
-    white_collar_dummy = ifelse(occup_status == "White Collar Employee", 1, 0),
+    white_collar_dummy = ifelse(occup_status %in% c("White Collar - Self-Employed", "White Collar Employee"), 1, 0),
     self_employed_dummy = ifelse(occup_status %in% c("White Collar - Self-Employed", "Agriculture - Self-Employed"), 1, 0)
   )
 ```
@@ -3878,9 +3878,9 @@ ggsave("rf_rmse.png", plot = last_plot(), width = 16, height = 8, dpi = 300)
 train_control <- trainControl(method = "cv", number = 10)
 
 tune_grid <- expand.grid(
-  mtry = seq(2,4,0.05),  # Number of variables randomly sampled at each split
+  mtry = seq(3,7,0.05),  # Number of variables randomly sampled at each split
   splitrule = "gini", # Number of trees in the forest
-  min.node.size = c(1, 5, 10) # Minimum size of terminal nodes
+  min.node.size = c(1, 2, 5) # Minimum size of terminal nodes
 )
 
 # Train the Random Forest model using ranger in caret
@@ -3904,6 +3904,7 @@ predictions <- predict(rf_model, newdata = testData)
 
 ```{r}
 # Confusion matrix to evaluate performance
+predictions <- factor(predictions, levels = c("No", "Yes"))
 confusionMatrix(predictions, testData$health_decline_2yrs, positive = "Yes")
 
 
@@ -3911,11 +3912,11 @@ confusionMatrix(predictions, testData$health_decline_2yrs, positive = "Yes")
 rf_final <- ranger(
   formula    = class_tree_formula, 
   data       = trainData, 
-  num.trees  = 100,           # Number of trees
+  num.trees  = 75,           # Number of trees
   probability = TRUE,         # Predict probabilities
   importance = "impurity",    # Variable importance measure
   mtry       = 3.15,          # Number of variables randomly sampled at each split
-  min.node.size = 10,         # Minimum node size
+  min.node.size = 5,         # Minimum node size
   seed       = 123            # For reproducibility
 )
 
@@ -3935,7 +3936,7 @@ v1_table <- v1_table %>%
       Variable == "health_satisfaction" ~ "Health Satisfaction",
       Variable == "life_satisfaction" ~ "Life Satisfaction",
       Variable == "educ" ~ "Education Level",
-      Variable == "male" ~ "Gender (Male=1)",
+      Variable == "male" ~ "Male (Dummy)",
       Variable == "worr_job_dummy" ~ "Job Worries (Dummy)",
       Variable == "tenure" ~ "Tenure",
       Variable == "tenure_lag1" ~ "Tenure of previous year",
@@ -3986,10 +3987,10 @@ ggsave("rf_importance.png", plot = last_plot(), width = 16, height = 8, dpi = 30
 ## Partial Dependence
 
 ```{r}
-# Calculate the Partial Dependence for health_lag1
-pdp_health_lag1 <- partial(
+# Calculate the Partial Dependence for married
+pdp_married <- partial(
   object = rf_final, 
-  pred.var = "health_lag1", 
+  pred.var = "married", 
   train = trainData,
   prob = TRUE  
 )
@@ -4010,13 +4011,11 @@ pdp_bmi <- partial(
   prob = TRUE
 )
 
-#Transform tenure_lag1 into numeric
-trainData$tenure_lag1 <- as.numeric(trainData$tenure_lag1)
 
-# Calculate the Partial Dependence for tenure
-pdp_tenure <- partial(
+# Calculate the Partial Dependence for white_collar
+pdp_white_collar <- partial(
   object = rf_final, 
-  pred.var = "tenure_lag1", 
+  pred.var = "white_collar_dummy", 
   train = trainData,
   prob = TRUE
 )
@@ -4040,10 +4039,10 @@ pdp_age <- partial(
 ```
 
 ```{r}
-# Plot the PDP for health_lag1
-p1 <- autoplot(pdp_health_lag1) +
+# Plot the PDP for  married
+p1 <- autoplot(pdp_married) +
   ylab("Health Decline Prob")+
-  xlab("Health in previous year")+
+  xlab("Married (Dummy)")+
   theme_minimal()
 
 # Plot the PDP for male
@@ -4058,10 +4057,10 @@ p3 <- autoplot(pdp_bmi) +
   xlab("BMI")+
   theme_minimal()
 
-# Plot the PDP for tenure
-p4 <- autoplot(pdp_tenure) +
+# Plot the PDP for white color job
+p4 <- autoplot(pdp_white_collar) +
   ylab("Health Decline Prob")+
-  xlab("Tenure of previous year")+
+  xlab("White Color Job (Dummy)")+
   theme_minimal()
 
 # Plot the PDP for life_satisfaction
