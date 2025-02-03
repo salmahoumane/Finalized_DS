@@ -13,12 +13,12 @@ output:
 # Introduction
 Self-assessed health is a widely used indicator to gauge the well-being in polulation setting. Identifying aspects linked to individuals’ self-assessments of their health may help to prioritize factors that can be addressed in advance, thus, shifting focus from treating illnesses to preventing them (Clark, Cheryl R., et al., 2021).
 
-Our study explores the predictors of decline of self-assessed health and worries about health. We investigate the connection between self-asessed health decline and demographic, socio-economic and other health-related factors using Lasso Regression and Random Forest and how these factors compare to the predictors of health-related worries.
+Our study explores the predictors of decline of self-assessed health. We investigate the connection between self-asessed health decline and demographic, socio-economic and other health-related factors using Lasso Regression and Random Forest.
 
-We exploit the data retrieved from German Socioeconomic Panel (G-SOEP) – a longitudinal household survey that has been conducted in Germany annually since 1984, which collects detailed data from individuals and households. Our dataset includes subjective health measures (self-assessed health, worries about health and health satisfaction), health-related factors, labour market variables and socio-demographic characteristics. We restrict the analysis to individuals aged between 25 and 55 years old. Due to absence of essential variables before 2001 our panel contains data since 1999 up to the last available year - 2019.
+We exploit the data retrieved from German Socioeconomic Panel (G-SOEP) – a longitudinal household survey that has been conducted in Germany annually since 1984, which collects detailed data from individuals and households. Our dataset includes subjective health measures (self-assessed health, worries about health and health satisfaction), health-related factors, labour market variables and socio-demographic characteristics. We restrict the analysis to individuals aged between 25 and 55 years old. Due to absence of essential variables before 2001 our panel contains data since 2001 up to the last available year - 2019.
 
 ------------------------------------------------------------------------
-# 1. Setup
+2# 1. Setup
 
 ## 1.1 Load Required Packages
 
@@ -87,7 +87,6 @@ cat("Final dataset dimensions after all merges:", dim(main), "\n")
 ```
 
 ## 1.4 Main filtering: Analysis post 1999
-We remove all years before 1999 as the dataset does not contain informtion on health related worries before 1999.
 
 ```{r}
 # Drop observations prior to 1999
@@ -104,7 +103,7 @@ cat("Dimensions:", dim(main), "\n")
 # Clean and rename the `health` variable
 main <- main %>%
   rename(health = ple0008) %>%
-  filter(health != -1) %>%  # Filter those who refused to answer -> 398 observations dropped
+  filter(health != -1) %>%  # Filter valid health values -> 398 observations dropped
     mutate(health = case_when(health == 5 ~ 1, # Reverse the scale: 1 -> 5, 5 -> 1
                             health == 4 ~ 2,
                             health == 3 ~3,
@@ -120,21 +119,6 @@ ggplot(main, aes(x = factor(health))) +
     title = "Distribution of Self-Assessed Health",
     x = "Health Category (1 = Poor, 5 = Excellent)",
     y = "Count"
-  ) +
-  theme_minimal()
-
-#Visualisation: Line plot
-# Line plot: Average health over years
-main %>%
-  group_by(syear) %>%
-  summarize(avg_health = mean(health, na.rm = TRUE)) %>%
-  ggplot(aes(x = syear, y = avg_health)) +
-  geom_line(color = "darkgreen") +
-  geom_point(color = "darkgreen") +
-  labs(
-    title = "Average Self-Assessed Health Over Years",
-    x = "Survey Year",
-    y = "Average Health"
   ) +
   theme_minimal()
 ```
@@ -166,7 +150,7 @@ main <- main %>%
     )
   ) %>%
   ungroup() %>%
-  drop_na(worr_health_categorical) %>% # drop those who had too little information to be reasonably imputed-> 1032 obs
+  drop_na(worr_health_categorical) %>% # 1032
   mutate(worr_health_categorical = case_when(
                             worr_health_categorical == 3 ~ 1, # Reverse the scale: 1 = no worries
                             worr_health_categorical == 2 ~ 2,
@@ -181,7 +165,7 @@ ggplot(main, aes(x = worr_health_categorical)) +
   geom_bar(fill = "coral") +
   labs(
     title = "Distribution of Worries About Health",
-    x = "Worries About Health (1 = no worries; 3 = large worries)",
+    x = "Worries About Health",
     y = "Count"
   ) +
   theme_minimal()
@@ -223,7 +207,21 @@ main <- main %>%
 
 # Check for missing values in health_in_2yrs
 sum(is.na(main$health_in_2yrs))  # 81.113
-  # we are not yet dropping those observations because tey might be useful for the imputation of other variables
+
+#Visualisation: Line plot
+# Line plot: Average health over years
+main %>%
+  group_by(syear) %>%
+  summarize(avg_health = mean(health, na.rm = TRUE)) %>%
+  ggplot(aes(x = syear, y = avg_health)) +
+  geom_line(color = "darkgreen") +
+  geom_point(color = "darkgreen") +
+  labs(
+    title = "Average Self-Assessed Health Over Years",
+    x = "Survey Year",
+    y = "Average Health"
+  ) +
+  theme_minimal()
 ```
 
 # 3. Predictors
@@ -389,7 +387,6 @@ ggplot(main %>% filter(imputed_flag_health == 0), aes(x = factor(health_satisfac
   ) +
   theme_minimal()
 ```
-Even though the imputed observations display slightly larger life-satisfaction, the differences in the means and distribution are not large enough to warrant dropping those observations.
 
 ## 3.2.2 Height, Weight, BMI
 ```{r}
@@ -564,10 +561,10 @@ ggplot(main %>% filter(height_imputed == 0 & weight_imputed == 0), aes(x = BMI))
   theme_minimal()
 
 ```
-The imputed and non-imputed rows show almost no relevant differences in the descriptive statistics and the distribution of BMI and height. This indicates that the imputation process did not introduce any significant bias or distortion to the data.
+
 
 ## 3.2.3 Smoking
-Number of Cigarettes has too little observations which is why we are going to use the smoking status as a proxy for smoking. We will create a dummy variable for smoking status and impute missing values using the lag and lead method.
+Number of Cigarettes has too little observations
 ```{r}
 # Create `smoking_dummy`
 # Track Missing Categories Before Imputation
@@ -683,10 +680,10 @@ ggplot(main %>% filter(smoking_imputed == 0), aes(x = factor(smoking_dummy))) +
 
 
 ```
-As the imputed rows show a noticably larger share of smokers, this should be kept in mind for the analysis as we might overestimate smoking. However, the imputation is necessary to keep the sample size large enough for the analysis.
 
-## 3.2.4 Diet
-We decided not to include the diet variable in the analysis as it is only available for a very small subset of the sample (surveyed only every second year from 2004-2014). This would lead to a significant reduction in the sample size and might introduce bias.
+## 3.2.4 Diet: Special Potential Specification because surveyed every second year from 2004-2014
+Kick this out because it is way too little observations
+
 
 # 4. Control Variables
 ## 4.1 Worries about job security, financial situation, and economic situation 
@@ -709,14 +706,14 @@ print(missing_breakdown_before)
 
 # Lag/Lead Imputation (Max 2 Years)
 main <- main %>%
-  filter(plh0033 != -1 & plh0042 != -1 & plh0032  != -1 & plh0033 != -2 & plh0032 != -2) %>% # drop those who refused to answer or answered invalid
+  filter(plh0033 != -1 & plh0042 != -1 & plh0032  != -1 & plh0033 != -2 & plh0032 != -2) %>%
   arrange(pid, syear) %>%  # Ensure data is ordered by pid and syear
   group_by(pid) %>%
   mutate(
     # Impute -5 or -8 for `plh0042` with max 2-year lag/lead
     worries_job_imputed = if_else(plh0042 %in% c(-5, -6), 1, 0),
     plh0042 = case_when(
-      plh0042 %in% c(-5, -6) ~ {
+      plh0042 %in% c(-5, -8) ~ {
         lag_val <- if_else(syear - lag(syear) <= 2, lag(plh0042), NA_real_)
         lead_val <- if_else(dplyr::lead(syear) - syear <= 2, dplyr::lead(plh0042), NA_real_)
         if_else(!is.na(lag_val) & !is.na(lead_val), (lag_val + lead_val) / 2, coalesce(lag_val, lead_val))
@@ -740,7 +737,6 @@ main <- main %>%
 
 # Create Categorical and Dummy Variables
 main <- main %>%
-  filter(plh0032 != -5 & plh0042 != -5 & plh0042 != -6) %>% # drop those who couldnt be imputed
   mutate(
     worr_job_categorical = case_when(plh0042 == 1 ~ 3, # no worries
                                      plh0042 == 3 ~ 1, # large worries
@@ -757,16 +753,14 @@ main <- main %>%
   )
 
 main <- main %>%
-  filter(!is.na(worr_job_categorical) & !is.na(worr_financial_categorical)& !is.na(worr_economic_categorical)) 
+  filter(!is.na(worr_job_categorical) & !is.na(worr_financial_categorical)& !is.na(worr_economic_categorical)) # XXX observations dropped
 
 ```
 
-### Descriptive Statistics
+# Descriptive Statistics
 
 ```{r}
 # Define descriptive_stats function
-unique(main$worr_economic_dummy)
-
 descriptive_stats <- function(data, condition) {
   data %>%
     filter(!!rlang::enquo(condition)) %>%  # Use enquo for capturing condition
@@ -854,8 +848,8 @@ print(missing_breakdown_before)
 
 # Clean Tenure
 main <- main %>%
-  filter(pgerwzeit != -1 & pgerwzeit != -3) %>% # drop those who refused or answered invalidly
-  mutate(tenure = case_when(pgerwzeit == -2 ~ 0, # impute those who are without a job
+  filter(pgerwzeit != -1 & pgerwzeit != -3) %>%
+  mutate(tenure = case_when(pgerwzeit == -2 ~ 0,
                             TRUE ~ pgerwzeit))
 
 # Visualizations
@@ -873,12 +867,10 @@ ggplot(main, aes(x = tenure)) +
 
 ## 4.3 Net Income and Working time per week
 ```{r}
-#### Net Income
-
-# Breakdown Before Imputation for income
+# Breakdown Before Imputation
 missing_breakdown_before <- main %>%
   summarise(
-    refused = sum(pglabnet %in% c(-1, -3), na.rm = TRUE), 
+    refused = sum(pglabnet %in% c(-1, -3), na.rm = TRUE),
     not_applicable = sum(pglabnet == -2, na.rm = TRUE)
   )
 
@@ -887,12 +879,11 @@ print(missing_breakdown_before)
 
 # Transform `pglabnet` into `net_income`
 main <- main %>%
-  mutate(net_income = case_when(pglabnet == -2 ~ 0, # impute those who are without a job
+  mutate(net_income = case_when(pglabnet == -2 ~ 0,
                             TRUE ~ pglabnet))
 
-#### Working time per week
 
-# Breakdown Before Imputation for work time
+# Breakdown Before Imputation
 missing_breakdown_before <- main %>%
   summarise(
     refused = sum(pgtatzeit %in% c(-1, -3), na.rm = TRUE),
@@ -904,9 +895,9 @@ print(missing_breakdown_before)
 
 # Transform `pgtatzeit` into `work_time_weekly`
 main <- main %>%
-  filter(pgtatzeit != -1 & pgtatzeit != -3) %>% # drop those who refused or answered invalidly
+  filter(pgtatzeit != -1 & pgtatzeit != -3) %>% 
   mutate(
-    work_time_weekly = case_when(pgtatzeit == -2 ~ 0, # impute those who are without a job
+    work_time_weekly = case_when(pgtatzeit == -2 ~ 0,
                             TRUE ~ pgtatzeit))
 
 # Summary Statistics for Net Income
@@ -936,7 +927,7 @@ work_time_all <- main %>%
 print("Net Income Summary Statistics - All Rows:")
 print(net_income_all)
 
-print("\n Work Time Weekly Summary Statistics - All Rows:")
+print("\nWork Time Weekly Summary Statistics - All Rows:")
 print(work_time_all)
 
 # Plot for Net Income - All Rows
@@ -977,7 +968,7 @@ print(missing_breakdown_before)
 # Clean Total Years Unemployment
 main <- main %>%
   rename(total_years_unemployment = pgexpue) %>%
-  filter(total_years_unemployment != -1) # drop those who refused
+  filter(total_years_unemployment != -1)
 
 # Visualizations
 # All Rows
@@ -995,7 +986,7 @@ ggplot(main, aes(x = total_years_unemployment)) +
 ```{r}
 # Transform occupational status (pgstib)
 main <- main %>%
-  filter(pgstib != -1) %>% # drop those who refused
+  filter(pgstib != -1) %>%
   mutate(
     occup_status = case_when(
       pgstib >= 210 & pgstib <= 250 ~ "Blue Collar Employee",  # Blue collar emp
@@ -1024,8 +1015,7 @@ ggplot(main, aes(x = occup_status)) +
     x = "Occupational Status",
     y = "Count"
   ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme_minimal()
 
 ```
 
@@ -1033,7 +1023,7 @@ ggplot(main, aes(x = occup_status)) +
 ```{r}
 # Transform sex into male dummy
 main <- main %>%
-  filter(sex != -3) %>% # drop those who answered invalidly
+  filter(sex != -3) %>%
   mutate(male = ifelse(sex == 1, 1, 0))
 
 #Visualisation: Pie Chart
@@ -1077,12 +1067,12 @@ ggplot(main, aes(x = migback)) +
 ## 4.8 Marital Status
 ```{r}
 # Count the number of NA rows before imputation
-na_count_before <- sum(main$pgfamstd == -5)
+na_count_before <- sum(main$pgfamstd_dummy == -5)
 print(paste("Number of NA rows in pgfamstd_dummy before imputation:", na_count_before))
   # depending on that make imputation
 # Transform marital status and handle NA with lag/lead logic
 main <- main %>%
-  filter(pgfamstd != -1 & pgfamstd != -3) %>% # drop those who refused or answered invalidly
+  filter(pgfamstd != -1 & pgfamstd != -3) %>%
   mutate(rel_status = case_when(pgfamstd == 1 | pgfamstd == 7  ~ "married",
                                 pgfamstd == 2 | pgfamstd == 8  ~ "separated",
                                 pgfamstd == 3 ~ "single",
@@ -1094,7 +1084,7 @@ main <- main %>%
 
 sum(is.na(main$rel_status)) 
 
-# Drop the two missings because relationship status is too fluctuating to impute reasonably
+# Drop the two missings because relationship status is too fluctuating
 main <- main %>%
   filter(!is.na(rel_status))
 
@@ -1111,12 +1101,10 @@ ggplot(main, aes(x = rel_status)) +
   theme_minimal()
 
 ```
-
 ## 4.9 Age
-We restrict or analysis to those between 25 and 55 years old. This is reasonable as both during growth (until age 25) and during old age, individuals likeley display different health patterns.
 ```{r}
 main <- main %>%
-  filter(gebjahr != -1) %>% # drop those who refused
+  filter(gebjahr != -1) %>%
   mutate(age = syear - gebjahr)
 
 # Visualizations
@@ -1147,7 +1135,6 @@ ggplot(main, aes(x = age)) +
 
 
 ## 4.10 Education
-We decide to include and impute education after applying the age restriction as education is likely to be more stable after age 25.
 ```{r}
 
 main <- main %>%
@@ -1236,21 +1223,18 @@ below_zero_counts <- colSums(main < 0, na.rm = TRUE)
 below_zero_counts
 
 main <- main %>%
-  filter(!is.na(health_decline_2yrs) & !is.na(health_in_2yrs) & worr_job_categorical > 0 & worr_economic_categorical > 0) # drop those who are still missing and were kept before to facilitate impuatation
+  filter(!is.na(health_decline_2yrs) & !is.na(health_in_2yrs) & worr_job_categorical > 0 & worr_economic_categorical > 0)
 
 #Display the summary of the dataset
 skim(main)
 ```
 
-##  Saving the cleaned dataset
+# Saving the cleaned dataset
 ```{r}
 # Save the final main dataset as a CSV file
 write.csv(main, "SOEP_main_final.csv", row.names = FALSE)
 ```
-
-# Investigating the dataset
-
-## Correlation Heatmap
+# Correlation Heatmap
 ```{r}
 # In order to identify key predictors and relationships between variables, we create a correlation heatmap between numerical variables
 # Select numeric columns
@@ -1260,7 +1244,7 @@ numeric_data <- main[, sapply(main, is.numeric)]
 corr_matrix <- cor(numeric_data, use = "complete.obs")
 
 # Plot correlation heatmap
-ggcorrplot(corr_matrix, method = "circle", lab = FALSE) +
+ggcorrplot(corr_matrix, method = "circle", lab = TRUE) +
   labs(title = "Correlation Heatmap") +
   theme_minimal()
 
@@ -1340,7 +1324,7 @@ ggplot(filtered_table, aes(x = reorder(Variable_Pairs, Freq), y = Freq, fill = F
   coord_flip() +  # Flip coordinates for better readability
   labs(
     title = "Correlation Plot",
-    subtitle = "Visualizing selected Correlations"
+    subtitle = "Visualizing Correlations Across Variable Pairs"
   ) +
   scale_fill_manual(
     values = c("#FF0000", "#163E64"),  # Red for negative, dark blue for positive
@@ -1378,7 +1362,7 @@ ggsave("correlation_plot.png", plot = last_plot(), width = 16, height = 8, dpi =
 
 ```
 
-## Gender Disparities
+# Gender Disparities
 ```{r}
 # In order to highlight gender disparities in health perceptions, we create these graphs per gender
 # Group data by pid and gender (male), and summarize
@@ -1560,10 +1544,10 @@ ggplot(main_unique, aes(x = health_satisfaction, fill = factor(male), color = fa
 ggsave("gender_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
-We notice that gender differences are largley insignificant on health variables. Men display slightly larger health, health satisfaction and lower worries bout health but these. differences are rather small. We, therefore, do not expect gender to be a strong predictor.
+We notice that gender differences are insignificant on health variables. We, therefore, do not expect gender to be a strong predictor.
 
 
-## Educational Level Disparities
+# Educational Level Disparities
 
 ```{r}
 
@@ -1845,7 +1829,7 @@ Our dataset mostly contains individuals with upper secondary education levels, w
 In all graphs, we notice the same results: positive health perception as well as health satisfaction increases with education, and negative health perception through worrying or health decline decreases with education. We expect education to be correlated with income: people with higher education levels get higher salaries so the effects might be linked.
 
 
-## Income Level Disparities
+# Income Level Disparities
 
 There are 3 individuals with income over 40k, we will be dropping them for the visualisations as they skew them a lot.
 
@@ -2113,7 +2097,7 @@ ggsave("income_health_satisfaction.png", plot = last_plot(), dpi = 300)
 Most of the participants in this dataset have  a net income lower than 5000 euros and we see that for those, the higher the income, the higher the average health as we have a positively sloped line. However, for people with higher than 5000 euros income, we see a high variance, with some outliers therefore the negative trend cannot be confirmed.
 
 
-### Box Plot of Net Income by Education Level
+# Box Plot of Net Income by Education Level
 
 ```{r}
 ggplot(main, aes(x = factor(educ), y = net_income, fill = factor(educ))) +
@@ -2166,12 +2150,12 @@ ggsave("income_educ.png", plot = last_plot(), dpi = 300)
 ```
 There is not a significant relationship between education level and net income. 
 
-## Age Disparities
+# Age Disparities
 
 ```{r}
 # Distribution of age variable
 ggplot(main, aes(x = age)) +
-  geom_histogram(aes(y = after_stat(density)), binwidth = 5, fill = "#A6CEE3", color = "black", alpha = 0.7) + 
+  geom_histogram(aes(y = ..density..), binwidth = 5, fill = "#A6CEE3", color = "black", alpha = 0.7) + 
   geom_density(color = "#1E2B4F", size = 1) + 
   labs(
     title = "Combined Histogram and Density Plot of Age Distribution",
@@ -2416,9 +2400,9 @@ ggplot(age_data, aes(x = age_group, y = health_satisfaction, fill = age_group)) 
 ggsave("age_health_satisfaction.png", plot = last_plot(), dpi = 300)
 
 ```
-In our dataset, the most participants we have are around the age of 45. For all health variables, we notice the same trend: the positive subjective health perceptions are higher within younger individuals, health worries increases with age, and health satisfaction decreases with age. We also notice that health decline is stable across all age groups at around 24% and health doesn't largely vary. Because we expect older individuals to have a higher income, we should look into the intersection of age and income and their impact on health. 
+In our dataset, the most participants we have are around the age of 45. For all health variables, we notice the same trend: the positive subjective health perceptions are higher within younger individuals, health worries increases with age, and health satisfaction decreases with age. We also notice that health decline is stable accross all age groups at around 24%. Because we expect older individuals to have a higher income, we should look into the intersection of age and income and their impact on health. 
 
-### Scatter Plot of Net Income vs. Age
+# Scatter Plot of Net Income vs. Age
 ```{r}
 ggplot(main, aes(x = age, y = net_income)) +
   geom_point(alpha = 0.6, color = "#1E2B4F") + 
@@ -2447,9 +2431,9 @@ ggplot(main, aes(x = age, y = net_income)) +
 
 ggsave("income_age.png", plot = last_plot(), dpi = 300)
 ```
-Net income does increase with age but not significantly. 
+# Net income does increase with age but not significantly. 
 
-## Marital Status Disparities
+# Marital Status Disparities
 
 ```{r}
 # Group data by pid and rel_status, and summarize
@@ -2657,7 +2641,7 @@ Our dataset contains mostly married individuals, which makes sense as our main p
 We notice that single individuals are the least worried about their health but we expect this to be caused by the younger age of single participants. We will therefore examine the relationship between marital status and age.
 
 
-### Box Plot of Age by Relationship Status
+# Box Plot of Age by Relationship Status
 
 ```{r}
 ggplot(main, aes(x = factor(rel_status), y = age, fill = factor(rel_status))) +
@@ -2708,7 +2692,7 @@ ggsave("rel_status_age.png", plot = last_plot(), dpi = 300)
 
 As expected, the single group is younger but this is not significant as the variance is quite high.
 
-## Disparities by Place of Birth
+# Germborn Disparities
 
 ```{r}
 # Group data by pid and germborn, and summarize
@@ -2950,7 +2934,7 @@ ggsave("germborn_health_satisfaction.png", plot = last_plot(), dpi = 300)
 ```
 Our dataset mostly contains individuals born in Germany, which makes sense as it is the SOEP data. For people born in Germany or Outside of Germany, health distributions are quite similar. We do notice that individuals born outside of Germany have smaller health declines but also higher health worries and lower health satisfaction. The small differences, the contradictory findings, merged with the fact that we only have a small sample of individuals born outside of Germany does not allow us to make conclusion. 
 
-## Relationship between subjective and objective health
+# Relationship between subjective and objective health
 
 ```{r}
 # worr_health_categorical per health_satisfaction: 
@@ -3096,9 +3080,7 @@ Similarly, the higher life satisfaction, the higher health satisfaction as we ob
 
 Analyzing BMI, we also see that normal and overweight individuals show higher health. However, due to the low amount of observations of underweight and obese individuals, we cannot make conclusions.
 
-# Prep for Analysis
-
-## Create new dummys
+# Create new dummys
 In this section, we create new dummies for university degree, being married or not, having a white collar job or being self-employed. Our research led us to find literature that highlighted these categories as significant when it comes to subjective and objective health, therefore we will include them in our models.
 
 ```{r}
@@ -3118,7 +3100,8 @@ main <- main %>%
   )
 ```
 
-### Visualise new dummies
+#Visualise new dummies
+
 ```{r}
 # Select the dummy variables to visualize
 dummy_data <- main %>%
@@ -3167,9 +3150,7 @@ ggplot(dummy_data, aes(x = as.factor(Value), y = Count, fill = as.factor(Value))
   )
 ```
 
-## Summary Statistics
-
-### Detailed Summary Statistics Tables
+# Detailed Summary Statistics Tables
 
 ```{r}
 # Define health group labels and titles
@@ -3276,7 +3257,8 @@ for (title in names(group_tables)) {
 
 ```
 
-### Short Summary Statistics Table
+
+# Short Summary Statistics Table
 
 ```{r}
 # Define health group labels and titles
@@ -3359,7 +3341,9 @@ But, in general, in our dataset, most individuals report Good health (45,372), w
 
 # Modelling
 
-## Lasso Classification: Health worries as an outcome Variable
+## Prediction health worries
+
+## Lasso Classification
 
 ```{r}
 
@@ -3377,7 +3361,7 @@ lasso_data <- panel_data %>%
   na.omit()  # Remove missing values
 
 # Check class distribution in y
-class_distribution <- table(lasso_data$worr_health_dummy)
+class_distribution <- table(lasso_data$health_decline_2yrs)
 print(class_distribution)
 
 # Split the data into training and test data
@@ -3553,36 +3537,9 @@ Secondary Predictors
 - BMI (Body Mass Index): Higher BMI may contribute to health worries, possibly reflecting concerns about obesity-related conditions like heart disease or diabetes.
 - Being male: While gender plays a role, it is a weaker predictor. This could suggest that men worry about health less than women, or that their health worries are driven by different factors.
 
-### Evaluating the distribution of our outcome variable: Health in 2 years -categorical-
-```{r}
-# Create the bar plot
-ggplot(main, aes(x = factor(health_in_2yrs), fill = health_in_2yrs)) +
-  geom_bar(color = "black") +  # Add black border for clarity
-  scale_fill_distiller(palette = "RdBu", direction = 1) +  # Use RdBu color palette
-  labs(
-    title = "Distribution of Health in 2 Years",
-    x = "Health in 2 Years",
-    y = "Count",
-    fill = "Health Score"
-  ) +
-  theme_minimal(base_size = 14) +  # Clean aesthetic
-  theme(
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, margin = ggplot2::margin(b = 10)),
-    axis.title.x = element_text(size = 14, color = "#1E2B4F"),
-    axis.title.y = element_text(size = 14, color = "#1E2B4F"),
-    axis.text.x = element_text(size = 12, color = "#1E2B4F"),
-    axis.text.y = element_text(size = 12, color = "#1E2B4F"),
-    legend.title = element_text(size = 12, face = "bold"),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_rect(fill = "white", color = NA)
-  )
+## Predicting health decline in 2 years
 
-```
-
-For most participants, health in 2 years is around 4 or 3. 
-
-## Lasso Regression: Health in 2 years -categorical- as an outcome Variable
+##  Lasso Regression 
 
 ```{r}
 # Convert data to panel format
@@ -3805,8 +3762,7 @@ plot(lasso_model$finalModel, xvar = "lambda", label = TRUE)
 ## Interpretation
 The lasso regression predicting health decline rate shows that current health is an important predictor, followed by health satisfaction, life satisfaction and having a university degree. We also see that longer unemployment, financial worries, smoking, worrying about health, BMI and age have negative coefficients.
 
-## Evaluating the distribution of our next outcome variable: Health decline in 2 years -dummy-
-
+## Health decline in 2 years (Dummy) distribution
 ```{r}
 # Create the bar plot
 ggplot(main, aes(x = factor(health_decline_2yrs))) +
@@ -3831,7 +3787,35 @@ ggplot(main, aes(x = factor(health_decline_2yrs))) +
 
 For most participants, health does not decline in 2 years. 
 
-### Lasso Classification: Health decline in 2 years -dummy- as an outcome Variable
+## Health in 2 years distribution
+```{r}
+# Create the bar plot
+ggplot(main, aes(x = factor(health_in_2yrs), fill = health_in_2yrs)) +
+  geom_bar(color = "black") +  # Add black border for clarity
+  scale_fill_distiller(palette = "RdBu", direction = 1) +  # Use RdBu color palette
+  labs(
+    title = "Distribution of Health in 2 Years",
+    x = "Health in 2 Years",
+    y = "Count",
+    fill = "Health Score"
+  ) +
+  theme_minimal(base_size = 14) +  # Clean aesthetic
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5, margin = ggplot2::margin(b = 10)),
+    axis.title.x = element_text(size = 14, color = "#1E2B4F"),
+    axis.title.y = element_text(size = 14, color = "#1E2B4F"),
+    axis.text.x = element_text(size = 12, color = "#1E2B4F"),
+    axis.text.y = element_text(size = 12, color = "#1E2B4F"),
+    legend.title = element_text(size = 12, face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "white", color = NA)
+  )
+
+```
+For most participants, health in 2 years is around 4 or 3. 
+
+## Lasso Classification
 
 ```{r}
 # Split the data into training and test data
@@ -4034,7 +4018,7 @@ ggsave("lasso_coefficients_classification.png", plot = last_plot(), width = 16, 
 ```
 The most important predictor in our model is health, followed by BMI, worries about health, health satisfaction, and having a university degree. Because health impacts our model heavily, we try to exclude it and see if our results vary significantly.
 
-### Lasso Classification: Health decline in 2 years -dummy- as an outcome Variable, excluding Health in t-1
+## Lasso Classification excluding Health
 
 ```{r}
 # Split the data into training and test data
@@ -4237,7 +4221,7 @@ ggsave("lasso_coefficients_classification_no_health.png", plot = last_plot(), wi
 Health satisfaction then becomes the most important predictor. Followed by BMI, Smoking, not having a University degree, being a female, not being married, and worrying about health. These results align with expectations, but the predictors identified are similar to the one including the Health predictor, and the specificity being close to 0, therefore in the RF, we will still include health.
 
 
-### Random Forest Classification: Health decline in 2 years -dummy- as an outcome Variable
+## Random Forest Classification
 
 ```{r}
 set.seed(12345)
@@ -4395,7 +4379,6 @@ print(rf_model)
 rf_predictions <- predict(rf_model, newdata = testData)
 
 ```
-
 The values of mtry or the number of predictors randomly selected at each split in the decision trees and minimum node size are 3.85 and 5 respectively to give an accuracy of 77.7% and Kappa value of 0.2426346. Kappa measures agreement beyond chance (range: 0 to 1). 0.24 Kappa suggests low to moderate agreement, meaning the model is only slightly better than chance in handling class imbalance.
 
 
@@ -4482,15 +4465,14 @@ ggsave("rf_importance.png", plot = last_plot(), width = 16, height = 8, dpi = 30
 
 ```
 
-#### Interpretation
-
+## Interpretation
 Both Lasso Regression and Random Forest largely highlight similar patterns:
 • Health seems to be path-related as current health is the strongest predictor for future health decline,
 • Personal characteristics such as older age or higher BMI as associated with higher probabilities of health decline while being married is associated with a lower probability,
 • Labor market characteristics like net income and tenure also seem to predict health decline – however, the direction of the effect is not clear.
 Both models show similar Accuracy above 70%, which reflects the overall model performance quality. Lasso Regression demonstrates high Sensitivity, which means that the model rarely misses health decline cases. On the contrary, Random Forest has a very high Specificity, implying very well identification of “no health decline” cases.
 
-#### Partial Dependence
+## Partial Dependence
 
 ```{r}
 
@@ -4561,13 +4543,11 @@ p6 <- autoplot(pdp_age) +
 (p6 ) 
 ```
 
-#### Next steps
+# Next steps
+Because neither models provided convincing results, we will be performing random undersampling in Lasso and only using 30% of the majority class.
 
-Because neither models provided convincing results, we will be performing random undersampling in Lasso and balancing the majority and minority classes.
 
-
-### Lasso Classification: Health decline in 2 years -dummy- as an outcome Variable, WITH undersampling 
-
+#Lasso Classification model with undersampling
 ```{r}
 # Convert data to panel format
 panel_data <- pdata.frame(main, index = c("pid", "syear"))  # pid = individual ID, syear = time
@@ -4709,6 +4689,8 @@ print(paste0("Sensitivity: ", conf_matrix$byClass["Sensitivity"]))
 print(paste0("Specificity: ", conf_matrix$byClass["Specificity"]))
 ```
 
+#Finding non-zero coefficients and visualising them
+
 ```{r}
 # Convert sparse matrix to data frame and filter non-zero coefficients
 coefficients <- coef(lasso_model_balanced$finalModel, s = lasso_model_balanced$bestTune$lambda)
@@ -4790,8 +4772,7 @@ ggsave("lasso_coefficients_classification_balanced.png", plot = last_plot(), wid
 
 Again, the important predictors are similar to the ones we have seen in the other models: health, BMI, worrying about one's health, health satisfaction, not having a university degree, being dissatisfied with life, and being a female. But what is interesting about this undersampled lasso model is that, even though the accuracy is only at 67%, the sensitivity 66.67% and specificity 67.7% are balanced. This suggests that your undersampled LASSO model is handling both classes fairly well.
 
-### Lasso Classification: Health decline in 2 years -dummy- as an outcome Variable, WITH undersampling, excluding Health in t-1
-
+## Undersampled Lasso model also excluding health
 ```{r}
 # Convert data to panel format
 panel_data <- pdata.frame(main, index = c("pid", "syear"))  # pid = individual ID, syear = time
@@ -4934,6 +4915,8 @@ print(paste0("Specificity: ", conf_matrix$byClass["Specificity"]))
 ```
 Excluding health, the performance significantly declines. The accuracy drops from 67% to 54%, the sensitivity also drops from 66.67% to 52% and the specificity from 67.7% to 60%. This means that self-reported health or objective health status strongly correlates with future health decline.
 
+#Finding non-zero coefficients and visualising them
+
 ```{r}
 # Convert sparse matrix to data frame and filter non-zero coefficients
 coefficients <- coef(lasso_model_balanced$finalModel, s = lasso_model_balanced$bestTune$lambda)
@@ -5016,6 +4999,5 @@ ggsave("lasso_coefficients_classification_balanced_no_health.png", plot = last_p
 And similar to previous unbalanced lasso excluding health, the most important predictors are health satisfaction, BMI, Smoking, Age, not having a university degree, not being married, worrying about health, and being a female.
 
 
-# Conclusion
-
+## Conclusion
 Our study investigates factors that are associated with the decline of individuals’ self-assessed health. Using G-SOEP and applying Lasso Regression and Random Forest, we found good classification performance. Important predictors ranged from current health over personal characteristics to job characteristics suggesting that a holistic view of health is necessary when confronting the issue of health decline.
